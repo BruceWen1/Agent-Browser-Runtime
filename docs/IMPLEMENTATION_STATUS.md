@@ -1,12 +1,13 @@
 # 实施进度记录（启动模板）
 
-基线：2026-10-10；当前状态：**NOT STARTED**（文档已完成；尚无实现代码通过测试）。
+基线：2026-10-10；当前状态：**IMPLEMENTING**。TASK-001 至 TASK-004 已完成本机基础检查、契约和核心单测，正在推进 FakeEngine 与 MCP 端到端实现。
 
 ## 任务状态
 
 | 任务范围 | 状态 | 测试证据 | 阻塞 |
 |---|---|---|---|
-| TASK-001 ~ 008 / 共享 Core、MCP、CLI | Not Started | — | 等待本地 Codex |
+| TASK-001 ~ 004 / 工程、契约、会话、策略 | Implemented | TypeScript、lint、13 项契约/单元测试及 Rust 骨架检查 | Rust IPC 往返在 TASK-011 补齐 |
+| TASK-005 ~ 008 / FakeEngine、MCP、产物、CLI | In Progress | 待端到端测试 | 依赖当前 Core |
 | TASK-009 ~ 010 / Compatible | Not Started | — | 等待共享 Core |
 | TASK-011 ~ 017 / GUI 后端 | Not Started | — | 需要各 OS 真实 GUI 权限 |
 | TASK-018 ~ 020 / 一致性和审批 | Not Started | — | 需要 Agent 和 fixture |

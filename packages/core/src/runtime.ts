@@ -33,11 +33,15 @@ import type {
   ExecutionPath,
 } from '@abr/contracts';
 
-import { EngineRegistry } from './registry.js';
+import type { EngineRegistry } from './registry.js';
 
 export interface RuntimeGuard {
   prepareSession(input: CreateSessionRequest): Promise<CreateSessionRequest>;
   authorize(input: ActionRequest, url: string, target?: AxNode): Promise<void>;
+  created?(session: BrowserSession, input: CreateSessionRequest): Promise<void>;
+  closed?(session: BrowserSession): Promise<void>;
+  failed?(input: CreateSessionRequest): Promise<void>;
+  approvalState?(input: ActionRequest): 'pending' | 'approved' | 'denied' | 'expired' | undefined;
 }
 export interface AuditEvent {
   event: string;
@@ -160,9 +164,10 @@ export class Runtime {
     this.creating++;
     const started = performance.now();
     let created: BrowserSession | undefined;
+    let prepared: CreateSessionRequest | undefined;
     // Release capacity and partially created adapter state on startup failure.
     try {
-      const prepared = await this.guard.prepareSession(input);
+      prepared = await this.guard.prepareSession(input);
       created = await engine.create(prepared);
       const session = parseBrowserSession(created);
       // Keep engine identity and session ownership immutable at the boundary.
@@ -173,6 +178,7 @@ export class Runtime {
       ) {
         throw new BrowserError('INTERNAL_ERROR', 'Adapter returned inconsistent session metadata.');
       }
+      await this.guard.created?.(session, prepared);
       this.sessions.set(session.id, {
         session: structuredClone(session),
         engine,
@@ -189,6 +195,7 @@ export class Runtime {
       // Close newly allocated adapter state when its identifier is available.
       if (created?.id && !this.sessions.has(created.id))
         await engine.close(created.id).catch(() => undefined);
+      if (prepared) await this.guard.failed?.(prepared);
       throw normalizeError(error);
     } finally {
       this.creating--;
@@ -291,7 +298,37 @@ export class Runtime {
     if (existing) {
       if (existing.digest !== digest)
         throw new BrowserError('INVALID_ARGUMENT', 'Request identifier has a different payload.');
-      return structuredClone(await existing.result);
+      const cached = await existing.result;
+      const state = this.guard.approvalState?.(input);
+      // Denied and expired decisions terminate the original pending request.
+      if (cached.status === 'approval-required' && (state === 'denied' || state === 'expired')) {
+        const result: ActionResult = {
+          ...cached,
+          status: 'cancelled',
+          finishedAt: new Date().toISOString(),
+          error: {
+            code: 'POLICY_DENIED',
+            message: 'Approval was denied or expired.',
+            retryable: false,
+          },
+        };
+        record.requests.set(input.requestId, { digest, result: Promise.resolve(result) });
+        return structuredClone(result);
+      }
+      // An approved pending operation can resume once under the original request identity.
+      if (
+        cached.status === 'approval-required' &&
+        state === 'approved' &&
+        record.requests.get(input.requestId) === existing
+      ) {
+        const result = this.run(record, input);
+        record.requests.set(input.requestId, { digest, result });
+        return structuredClone(await result);
+      }
+      // Reuse a resumed operation rather than retaining its earlier approval challenge.
+      if (record.requests.get(input.requestId) !== existing)
+        return structuredClone(await record.requests.get(input.requestId)!.result);
+      return structuredClone(cached);
     }
     // Keep every request identity for the session lifetime instead of evicting it.
     if (record.requests.size >= this.maxRequests)
@@ -399,6 +436,9 @@ export class Runtime {
         startedAt,
         finishedAt: new Date().toISOString(),
         error: failure.toJSON(),
+        ...('approvalId' in failure && typeof failure.approvalId === 'string'
+          ? { approvalId: failure.approvalId }
+          : {}),
       };
     } finally {
       if (timer) clearTimeout(timer);
@@ -461,6 +501,7 @@ export class Runtime {
       try {
         await record.engine.cancel?.(id);
         await record.engine.close(id);
+        await this.guard.closed?.(record.session);
         record.session.status = 'closed';
         delete record.snapshot;
         this.audit({ event: 'session-closed', sessionId: id });

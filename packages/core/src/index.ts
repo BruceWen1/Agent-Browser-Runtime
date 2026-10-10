@@ -7,3 +7,6 @@
  */
 export * from './registry.js';
 export * from './runtime.js';
+export * from './config.js';
+export * from './policy.js';
+export * from './logging.js';
