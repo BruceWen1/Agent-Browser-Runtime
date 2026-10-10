@@ -1,4 +1,10 @@
-/** ABR contract draft. TASK-002 owns implementation and runtime validation. */
+// -*- coding: utf-8 -*-
+/**
+ * browser-api.ts
+ * Browser runtime public contracts
+ * =====================
+ * Define session, observation, action, and engine data shared by adapters.
+ */
 export type Engine = 'compatible' | 'gui' | 'native';
 export type SessionStatus =
   'creating' | 'ready' | 'busy' | 'paused' | 'closing' | 'closed' | 'failed';
@@ -55,6 +61,20 @@ export interface BrowserSnapshot {
   root: AxNode;
   scale: { dpr: number; zoom: number };
   source: 'os-accessibility' | 'chromium-accessibility' | 'playwright-accessibility';
+  url?: string;
+  tabs?: BrowserTab[];
+  geometry?: {
+    windowOrigin: { x: number; y: number };
+    viewportOrigin: { x: number; y: number };
+    monitorScale: number;
+  };
+}
+
+export interface BrowserTab {
+  id: string;
+  title: string;
+  url: string;
+  active: boolean;
 }
 export type Target =
   | { kind: 'ax-node'; snapshotId: string; nodeId: string }
@@ -94,6 +114,9 @@ export interface ActionResult {
   startedAt: string;
   finishedAt: string;
   snapshotIdAfter?: string;
+  approvalId?: string;
+  actualStrategy?:
+    'playwright-keyboard' | 'playwright-insert-text' | 'os-keyboard' | 'os-unicode' | 'os-ime';
   artifacts?: string[];
   error?: { code: BrowserErrorCode; message: string; retryable: boolean; nextAction?: string };
 }

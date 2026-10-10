@@ -3,6 +3,7 @@
 - Goal：建立 pnpm/TypeScript、Rust 工程和跨平台 CI 基础。
 - Changes：统一版本、编译选项、lint、测试入口、包边界检查与 Native Agent 入口。
 - Tests run：`corepack pnpm typecheck`、`corepack pnpm lint`、`corepack pnpm test` 已通过。Vitest 当前报告 0 个测试文件，属于骨架验证；功能测试随后续任务加入。
+- Rust checks：`cargo fmt --all -- --check`、`cargo clippy --workspace -- -D warnings`、`cargo test --workspace` 已通过；当前 Rust 骨架报告 0 个功能测试。
 - Tests blocked：macOS/Linux CI 需远程 runner 执行；本阶段尚无产品功能测试。
 - Known issues：工程骨架验证与浏览器实机功能验证分别记录。
 - Contract changes：保留实施包提供的类型及数据契约。
