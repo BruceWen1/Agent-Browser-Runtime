@@ -8,6 +8,8 @@
 import { pino } from 'pino';
 import type { Logger } from 'pino';
 
+export type RuntimeLogger = Logger;
+
 /**
  * Create the diagnostic logger with confidential field redaction.
  * Args:

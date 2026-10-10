@@ -238,9 +238,21 @@ importers:
 
   packages/cli:
     dependencies:
+      '@abr/artifacts':
+        specifier: workspace:*
+        version: link:../artifacts
       '@abr/contracts':
         specifier: workspace:*
         version: link:../../contracts
+      '@abr/core':
+        specifier: workspace:*
+        version: link:../core
+      '@abr/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
 
   packages/core:
     dependencies:

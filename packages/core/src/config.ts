@@ -52,6 +52,40 @@ export const configurationSchema = z.strictObject({
 export type RuntimeConfig = z.infer<typeof configurationSchema>;
 
 /**
+ * Construct the local runtime's conservative initial configuration.
+ * Args:
+ *   None.
+ * Returns:
+ *   RuntimeConfig: Validated defaults with isolated profiles and explicit policies.
+ */
+export function defaultConfiguration(): RuntimeConfig {
+  return configurationSchema.parse({
+    schemaVersion: 1,
+    runtime: {
+      defaultEngine: 'compatible',
+      logLevel: 'info',
+      artifactRetentionDays: 7,
+      maxSessions: 4,
+    },
+    mcp: { transport: 'stdio' },
+    browser: {
+      binary: 'bundled-chromium',
+      headless: false,
+      profileRoot: '${ABR_DATA_DIR}/profiles',
+    },
+    gui: { requireForeground: true, desktopInputConcurrency: 1, allowScriptFallback: false },
+    policy: {
+      allowedOrigins: ['http://127.0.0.1:*', 'http://localhost:*'],
+      deniedOrigins: [],
+      requireHumanApproval: ['file-upload', 'payment', 'send-message', 'delete'],
+      allowedUploadRoots: ['${ABR_DATA_DIR}/uploads'],
+    },
+    privacy: { redactSensitiveText: true, persistScreenshots: false, logUrlQuery: false },
+    native: { enabled: false },
+  });
+}
+
+/**
  * Resolve the current user's application data directory.
  * Args:
  *   None.

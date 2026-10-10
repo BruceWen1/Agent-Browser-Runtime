@@ -5,4 +5,5 @@
  * =====================
  * Identify the package during initial workspace compilation.
  */
-export const PACKAGE_NAME = '@abr/cli';
+export * from './application.js';
+export * from './main.js';

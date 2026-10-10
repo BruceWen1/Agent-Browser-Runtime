@@ -10,6 +10,9 @@ corepack pnpm typecheck
 corepack pnpm lint
 corepack pnpm test
 cargo test --workspace
+corepack pnpm abr init
+corepack pnpm abr doctor --json
+corepack pnpm abr mcp serve --stdio
 ```
 
 源码注释和函数说明使用英文，使用文档与实施报告使用中文。每项任务分别记录实现状态、编译验证和实机验收。
@@ -23,3 +26,9 @@ cargo test --workspace
 | Native     | Chromium 只读观察桥 | 复用系统输入    | 浏览器集成与功能回归      |
 
 Windows 是当前实机验证平台。macOS、Linux X11 和 Wayland 使用独立能力检测与验收记录。Chromium 构建工作目录由配置指定，并采用无空格路径。
+
+## 本地配置与授权
+
+初始化命令在当前项目的 `.abr/config.yaml` 创建配置，已有文件受到独占创建保护。Profile 默认位于当前用户的 ABR 应用数据目录；可通过 `ABR_DATA_DIR` 指定独立测试目录。默认授权范围为本机 HTTP 测试域，其他目标需要由本地用户修改允许列表。
+
+MCP 客户端使用 `node packages/cli/dist/main.js mcp serve --stdio` 启动运行时。协议使用标准输出，诊断使用标准错误。工具目录包含 21 个浏览器工具，可通过 `browser_capabilities` 查询当前会话的实际能力。

@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "abr": "./dist/main.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -13,6 +16,10 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@abr/contracts": "workspace:*"
+    "@abr/artifacts": "workspace:*",
+    "@abr/contracts": "workspace:*",
+    "@abr/core": "workspace:*",
+    "@abr/mcp-server": "workspace:*",
+    "yaml": "2.9.1"
   }
 }
