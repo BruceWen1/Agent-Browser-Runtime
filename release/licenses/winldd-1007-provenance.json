@@ -31,8 +31,8 @@
   ],
   "licenseFile": {
     "filename": "winldd-1007-LICENSE.txt",
-    "sha256": "729a0ff2b78d279866b073c7f4fb7421d14b80aeb541be99da792a963bec52a9",
-    "size": 13274
+    "sha256": "13a93cea1ae4e34140a1a5538fa05a41983ec642aac4d32010c8559332243593",
+    "size": 13052
   },
   "binaryBuildAttestation": null
 }
