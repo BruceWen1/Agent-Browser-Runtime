@@ -5,4 +5,5 @@
  * =====================
  * Identify the package during initial workspace compilation.
  */
-export const PACKAGE_NAME = '@abr/mcp-server';
+export * from './server.js';
+export * from './stdio.js';
