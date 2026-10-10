@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "fixture": "click-button",
+  "environment": {
+    "os": "windows",
+    "browserCommit": "example-sha-not-a-real-chromium-commit",
+    "engine": "gui"
+  },
+  "samples": [
+    { "type": "pointerdown", "trusted": true, "target": "submit" },
+    { "type": "pointerup", "trusted": true, "target": "submit" },
+    { "type": "click", "trusted": true, "target": "submit" }
+  ],
+  "outcome": { "submitted": true }
+}

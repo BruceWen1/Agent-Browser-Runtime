@@ -1,0 +1,5 @@
+packages:
+  - contracts
+  - packages/*
+minimumReleaseAgeExclude:
+  - '@types/node@24.19.2'

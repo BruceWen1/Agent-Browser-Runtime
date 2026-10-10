@@ -1,0 +1,10 @@
+[package]
+name = "abr-desktop-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "abr-desktop-agent"
+path = "src/main.rs"

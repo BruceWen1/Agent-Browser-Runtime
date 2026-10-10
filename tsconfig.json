@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "contracts" },
+    { "path": "packages/artifacts" },
+    { "path": "packages/core" },
+    { "path": "packages/native-ipc-client" },
+    { "path": "packages/playwright-worker" },
+    { "path": "packages/mcp-server" },
+    { "path": "packages/cli" },
+    { "path": "packages/test-fixtures" }
+  ]
+}

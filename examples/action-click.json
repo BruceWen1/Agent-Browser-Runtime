@@ -1,0 +1,11 @@
+{
+  "requestId": "req-0001",
+  "sessionId": "session-001",
+  "action": "click",
+  "target": {
+    "kind": "ax-node",
+    "snapshotId": "snapshot-010",
+    "nodeId": "button-submit"
+  },
+  "timeoutMs": 10000
+}

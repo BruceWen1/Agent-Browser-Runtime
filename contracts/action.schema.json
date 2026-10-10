@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://abr.local/schema/v1/action.schema.json",
+  "title": "ABR ActionRequest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "sessionId", "action"],
+  "properties": {
+    "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "sessionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "action": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "target": { "$ref": "#/$defs/target" },
+    "args": { "type": "object" },
+    "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+    "expectedSnapshotId": { "type": "string", "minLength": 1, "maxLength": 128 }
+  },
+  "$defs": {
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "snapshotId", "nodeId"],
+          "properties": {
+            "kind": { "const": "ax-node" },
+            "snapshotId": { "type": "string", "minLength": 1 },
+            "nodeId": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "x", "y", "space", "windowId"],
+          "properties": {
+            "kind": { "const": "coordinate" },
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "space": { "enum": ["viewport-css", "window-dip", "screen-physical"] },
+            "windowId": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    }
+  }
+}

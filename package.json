@@ -1,0 +1,32 @@
+{
+  "name": "agent-browser-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.10.1",
+  "engines": {
+    "node": ">=24.15.0 <25"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.tests.json --noEmit",
+    "lint": "eslint . && prettier --check . && node scripts/check-boundaries.mjs",
+    "format": "prettier --write .",
+    "test:unit": "vitest run --config vitest.config.ts tests/unit --passWithNoTests",
+    "test:contracts": "vitest run --config vitest.config.ts tests/contracts --passWithNoTests",
+    "test:mcp": "vitest run --config vitest.config.ts tests/integration/mcp --passWithNoTests",
+    "test:compatible": "vitest run --config vitest.config.ts tests/e2e/compatible --passWithNoTests",
+    "test": "vitest run --config vitest.config.ts --passWithNoTests",
+    "abr": "node packages/cli/dist/main.js",
+    "test:rust": "cargo test --workspace",
+    "check": "pnpm typecheck && pnpm lint && pnpm test"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "eslint": "10.12.0",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "vitest": "5.0.3"
+  }
+}

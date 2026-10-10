@@ -1,0 +1,853 @@
+{
+  "schemaVersion": 1,
+  "schemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "securityNote": "Approval cannot be granted via MCP; trusted local UI only. Values are candidate schemas for TASK-002.",
+  "tools": [
+    {
+      "name": "browser_session_create",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "engine": {
+            "enum": ["compatible", "gui", "native"]
+          },
+          "browser": {
+            "enum": ["bundled-chromium", "installed-chrome", "custom-chromium"]
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "enum": ["ephemeral", "persistent"]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": ["mode"],
+            "additionalProperties": false
+          },
+          "headless": {
+            "type": "boolean"
+          },
+          "locale": {
+            "type": "string",
+            "minLength": 1
+          },
+          "allowedOrigins": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": ["engine", "browser", "profile"],
+        "additionalProperties": false
+      },
+      "requiredCapability": null,
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_session_list",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "requiredCapability": null,
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_session_close",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["sessionId"],
+        "additionalProperties": false
+      },
+      "requiredCapability": null,
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_capabilities",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["sessionId"],
+        "additionalProperties": false
+      },
+      "requiredCapability": null,
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_observe",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 32
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nameContains": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["sessionId"],
+        "additionalProperties": false
+      },
+      "requiredCapability": "observe.ax",
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_screenshot",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "region": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "width": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "height": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "space": {
+                "enum": ["viewport-css", "window-dip", "screen-physical"]
+              }
+            },
+            "required": ["x", "y", "width", "height", "space"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["sessionId"],
+        "additionalProperties": false
+      },
+      "requiredCapability": "observe.screenshot",
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_click",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "ax-node"
+                  },
+                  "snapshotId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "nodeId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "snapshotId", "nodeId"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "coordinate"
+                  },
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  },
+                  "space": {
+                    "enum": ["viewport-css", "window-dip", "screen-physical"]
+                  },
+                  "windowId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "x", "y", "space", "windowId"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": ["sessionId", "requestId", "target"],
+        "additionalProperties": false
+      },
+      "requiredCapability": "input.pointer",
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_double_click",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "ax-node"
+                  },
+                  "snapshotId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "nodeId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "snapshotId", "nodeId"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "coordinate"
+                  },
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  },
+                  "space": {
+                    "enum": ["viewport-css", "window-dip", "screen-physical"]
+                  },
+                  "windowId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "x", "y", "space", "windowId"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": ["sessionId", "requestId", "target"],
+        "additionalProperties": false
+      },
+      "requiredCapability": "input.pointer",
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_pointer_move",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "ax-node"
+                  },
+                  "snapshotId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "nodeId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "snapshotId", "nodeId"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "coordinate"
+                  },
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  },
+                  "space": {
+                    "enum": ["viewport-css", "window-dip", "screen-physical"]
+                  },
+                  "windowId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "x", "y", "space", "windowId"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": ["sessionId", "requestId", "target"],
+        "additionalProperties": false
+      },
+      "requiredCapability": "input.pointer",
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_key_press",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "modifiers": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": ["Shift", "Control", "Alt", "Meta"]
+            }
+          }
+        },
+        "required": ["sessionId", "requestId", "key"],
+        "additionalProperties": false
+      },
+      "requiredCapability": "input.keyboard",
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_type_text",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "strategy": {
+            "enum": ["auto", "keyboard", "ime"]
+          }
+        },
+        "required": ["sessionId", "requestId", "text"],
+        "additionalProperties": false
+      },
+      "requiredCapability": "input.keyboard",
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_scroll",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deltaX": {
+            "type": "number"
+          },
+          "deltaY": {
+            "type": "number"
+          },
+          "unit": {
+            "enum": ["pixel", "line"]
+          },
+          "target": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "ax-node"
+                  },
+                  "snapshotId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "nodeId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "snapshotId", "nodeId"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "coordinate"
+                  },
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  },
+                  "space": {
+                    "enum": ["viewport-css", "window-dip", "screen-physical"]
+                  },
+                  "windowId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "x", "y", "space", "windowId"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": ["sessionId", "requestId", "deltaY"],
+        "additionalProperties": false
+      },
+      "requiredCapability": "input.pointer",
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_drag",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "ax-node"
+                  },
+                  "snapshotId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "nodeId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "snapshotId", "nodeId"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "coordinate"
+                  },
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  },
+                  "space": {
+                    "enum": ["viewport-css", "window-dip", "screen-physical"]
+                  },
+                  "windowId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "x", "y", "space", "windowId"],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "destination": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "ax-node"
+                  },
+                  "snapshotId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "nodeId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "snapshotId", "nodeId"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "coordinate"
+                  },
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  },
+                  "space": {
+                    "enum": ["viewport-css", "window-dip", "screen-physical"]
+                  },
+                  "windowId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "x", "y", "space", "windowId"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": ["sessionId", "requestId", "source", "destination"],
+        "additionalProperties": false
+      },
+      "requiredCapability": "input.pointer",
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_navigate",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": ["sessionId", "requestId", "url"],
+        "additionalProperties": false
+      },
+      "requiredCapability": "browser.navigate",
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_go_back",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["sessionId", "requestId"],
+        "additionalProperties": false
+      },
+      "requiredCapability": "browser.navigate",
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_switch_tab",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tabId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["sessionId", "requestId", "tabId"],
+        "additionalProperties": false
+      },
+      "requiredCapability": "browser.tabs",
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_choose_file",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "filePath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "ax-node"
+                  },
+                  "snapshotId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "nodeId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "snapshotId", "nodeId"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "coordinate"
+                  },
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  },
+                  "space": {
+                    "enum": ["viewport-css", "window-dip", "screen-physical"]
+                  },
+                  "windowId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["kind", "x", "y", "space", "windowId"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": ["sessionId", "requestId", "filePath"],
+        "additionalProperties": false
+      },
+      "requiredCapability": "browser.fileDialog",
+      "humanApproval": true,
+      "risk": "elevated"
+    },
+    {
+      "name": "browser_wait_for",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "query": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "match": {
+                "enum": ["exact", "contains"]
+              }
+            },
+            "required": ["role"],
+            "additionalProperties": false
+          },
+          "state": {
+            "enum": ["visible", "hidden", "focused", "absent"]
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120000
+          }
+        },
+        "required": ["sessionId", "query", "state"],
+        "additionalProperties": false
+      },
+      "requiredCapability": "observe.ax",
+      "humanApproval": false,
+      "risk": "normal"
+    },
+    {
+      "name": "browser_approval_status",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "approvalId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["approvalId"],
+        "additionalProperties": false
+      },
+      "requiredCapability": null,
+      "humanApproval": false,
+      "risk": "read"
+    },
+    {
+      "name": "browser_trace_export",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "format": {
+            "enum": ["json", "html"]
+          }
+        },
+        "required": ["sessionId"],
+        "additionalProperties": false
+      },
+      "requiredCapability": null,
+      "humanApproval": false,
+      "risk": "read"
+    },
+    {
+      "name": "browser_artifact_read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "blobId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["blobId"],
+        "additionalProperties": false
+      },
+      "requiredCapability": null,
+      "humanApproval": false,
+      "risk": "read"
+    }
+  ]
+}

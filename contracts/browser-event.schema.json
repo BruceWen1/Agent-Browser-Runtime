@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://abr.local/schema/v1/browser-event.schema.json",
+  "title": "ABR GUI Event Trace v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "fixture", "environment", "samples", "outcome"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "fixture": { "type": "string", "minLength": 1 },
+    "environment": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["os", "browserCommit", "engine"],
+      "properties": {
+        "os": { "type": "string" },
+        "browserCommit": { "type": "string" },
+        "engine": { "type": "string", "enum": ["manual", "compatible", "gui", "native"] }
+      }
+    },
+    "samples": { "type": "array", "items": { "$ref": "#/$defs/event" } },
+    "outcome": { "type": "object" }
+  },
+  "$defs": {
+    "event": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "trusted"],
+      "properties": {
+        "type": { "type": "string" },
+        "trusted": { "type": "boolean" },
+        "target": { "type": "string" },
+        "key": { "type": "string" },
+        "code": { "type": "string" },
+        "inputType": { "type": "string" },
+        "button": { "type": "integer" },
+        "buttons": { "type": "integer" },
+        "pointerType": { "type": "string" },
+        "focus": { "type": "string" },
+        "activation": { "type": "boolean" }
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+target/
+.cache/
+.abr/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+ABR_*.zip
+ABR_*.docx
+ABR_*.md
+word/
+*.log
+.env

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://abr.local/schema/v1/session.schema.json",
+  "title": "ABR BrowserSession v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "engine",
+    "status",
+    "browserVersion",
+    "platform",
+    "capabilities",
+    "createdAt",
+    "profileId"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "engine": { "enum": ["compatible", "gui", "native"] },
+    "status": { "enum": ["creating", "ready", "busy", "paused", "closing", "closed", "failed"] },
+    "browserVersion": { "type": "string" },
+    "browserCommit": { "type": "string" },
+    "playwrightVersion": { "type": "string" },
+    "platform": { "type": "string" },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "observe.ax",
+          "observe.screenshot",
+          "window.focus",
+          "input.pointer",
+          "input.keyboard",
+          "input.ime",
+          "browser.navigate",
+          "browser.tabs",
+          "browser.fileDialog",
+          "script.evaluate",
+          "network.intercept"
+        ]
+      }
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "profileId": { "type": "string", "minLength": 1 }
+  }
+}

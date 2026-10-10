@@ -1,0 +1,18 @@
+{
+  "id": "session-001",
+  "engine": "gui",
+  "status": "ready",
+  "browserVersion": "unverified-example",
+  "platform": "windows-x64",
+  "capabilities": [
+    "observe.ax",
+    "observe.screenshot",
+    "window.focus",
+    "input.pointer",
+    "input.keyboard",
+    "browser.navigate",
+    "browser.tabs"
+  ],
+  "createdAt": "2026-10-10T00:00:00Z",
+  "profileId": "profile-001"
+}
