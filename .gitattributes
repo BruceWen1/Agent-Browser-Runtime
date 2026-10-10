@@ -2,3 +2,5 @@
 *.docx binary
 *.zip binary
 *.png binary
+# Preserve the required context and signature spacing in mailbox patch artifacts.
+chromium/patches/*.patch whitespace=-blank-at-eol
