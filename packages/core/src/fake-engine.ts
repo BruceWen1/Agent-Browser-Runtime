@@ -40,7 +40,7 @@ export type ScreenshotSink = (sessionId: string, bytes: Buffer) => Promise<strin
 
 // The PNG is a fixed single-pixel fixture containing no user-derived data.
 const FIXTURE_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jS1cAAAAASUVORK5CYII=',
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWNgYGD4DwABBAEAfbLI3wAAAABJRU5ErkJggg==',
   'base64',
 );
 const SUPPORTED: Capability[] = [

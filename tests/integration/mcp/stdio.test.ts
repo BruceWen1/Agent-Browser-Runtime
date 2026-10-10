@@ -102,6 +102,29 @@ async function verifyStdio(): Promise<void> {
       }),
     );
     expect(waiting.nodeId).toBe('activate');
+    const screenshot = await client.callTool({
+      name: 'browser_screenshot',
+      arguments: { sessionId },
+    });
+    expect(screenshot.content?.some((block) => block.type === 'image')).toBe(true);
+    const blobId = String(payload(screenshot).blobId);
+    const artifact = payload(
+      await client.callTool({
+        name: 'browser_artifact_read',
+        arguments: { blobId, offset: 0, maxBytes: 8 },
+      }),
+    );
+    expect(Buffer.from(String(artifact.data), 'base64')).toEqual(
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    );
+    expect(artifact.nextOffset).toBe(8);
+    const exported = payload(
+      await client.callTool({
+        name: 'browser_trace_export',
+        arguments: { sessionId, format: 'html' },
+      }),
+    );
+    expect(typeof exported.blobId).toBe('string');
     const denied = await client.callTool({
       name: 'browser_navigate',
       arguments: { sessionId, requestId: 'denied', url: 'https://example.com/' },

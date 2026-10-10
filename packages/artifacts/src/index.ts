@@ -5,4 +5,4 @@
  * =====================
  * Identify the package during initial workspace compilation.
  */
-export const PACKAGE_NAME = '@abr/artifacts';
+export * from './store.js';

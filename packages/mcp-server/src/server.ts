@@ -28,6 +28,7 @@ export interface McpDependencies {
   policy: PolicyEngine;
   artifacts?: McpArtifactAccess;
   audit?: (event: { event: string; tool: string; code?: string }) => void;
+  dispose?: () => Promise<void>;
 }
 
 // Tool descriptions explain public capabilities and required workflow semantics.
@@ -258,11 +259,18 @@ async function dispatch(
       const artifact = await dependencies.artifacts.read(String(params.blobId));
       if (!runtime.list().some((session) => session.id === artifact.sessionId))
         throw new BrowserError('POLICY_DENIED', 'Artifact session ownership is invalid.');
+      const offset = Number(params.offset ?? 0);
+      const end = Math.min(artifact.bytes.length, offset + Number(params.maxBytes ?? 524288));
+      if (offset > artifact.bytes.length)
+        throw new BrowserError('INVALID_ARGUMENT', 'Artifact offset is outside its content.');
       return toolResult({
         blobId: params.blobId,
         sessionId: artifact.sessionId,
         mimeType: artifact.mimeType,
-        data: artifact.bytes.toString('base64'),
+        data: artifact.bytes.subarray(offset, end).toString('base64'),
+        offset,
+        totalBytes: artifact.bytes.length,
+        ...(end < artifact.bytes.length ? { nextOffset: end } : {}),
       });
     }
     case 'browser_trace_export': {
@@ -324,6 +332,7 @@ export function createMcpServer(runtime: Runtime, dependencies: McpDependencies)
   server.server.onclose = () => {
     void runtime
       .closeAll()
+      .then(() => dependencies.dispose?.())
       .catch(() => dependencies.audit?.({ event: 'runtime-cleanup-error', tool: 'connection' }));
   };
   return server;

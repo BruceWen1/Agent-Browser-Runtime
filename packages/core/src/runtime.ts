@@ -34,6 +34,7 @@ import type {
 } from '@abr/contracts';
 
 import type { EngineRegistry } from './registry.js';
+import { filterSnapshot } from './privacy.js';
 
 export interface RuntimeGuard {
   prepareSession(input: CreateSessionRequest): Promise<CreateSessionRequest>;
@@ -260,7 +261,9 @@ export class Runtime {
   async observe(id: string): Promise<BrowserSnapshot> {
     const record = this.record(id);
     this.guard.authorizeRead?.(id, await record.engine.currentUrl(id));
-    const snapshot = await record.engine.observe(id);
+    const observed = await record.engine.observe(id);
+    validateOutput(snapshotSchema, observed);
+    const snapshot = filterSnapshot(observed);
     // Enforce session ownership and schema invariants on observed data.
     validateOutput(snapshotSchema, snapshot);
     if (snapshot.sessionId !== id)
