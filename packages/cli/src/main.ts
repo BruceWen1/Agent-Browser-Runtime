@@ -126,7 +126,9 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
             status: runtime.registry.kinds().includes(kind as 'compatible' | 'gui' | 'native')
               ? 'available'
               : 'unavailable',
-            reason: 'ADAPTER_NOT_REGISTERED',
+            ...(runtime.registry.kinds().includes(kind as 'compatible' | 'gui' | 'native')
+              ? {}
+              : { reason: 'ADAPTER_NOT_REGISTERED' }),
           },
         ]),
       );

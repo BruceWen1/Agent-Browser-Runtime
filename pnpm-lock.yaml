@@ -250,6 +250,9 @@ importers:
       '@abr/mcp-server':
         specifier: workspace:*
         version: link:../mcp-server
+      '@abr/playwright-worker':
+        specifier: workspace:*
+        version: link:../playwright-worker
       yaml:
         specifier: 2.9.1
         version: 2.9.1

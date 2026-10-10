@@ -24,6 +24,8 @@ function filterNode(node: AxNode): AxNode {
   ) {
     result.value = '[REDACTED]';
     result.name = 'Protected input';
+    result.children = [];
+    return result;
   }
   if (node.children) result.children = node.children.map(filterNode);
   return result;

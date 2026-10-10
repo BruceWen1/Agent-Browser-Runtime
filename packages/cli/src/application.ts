@@ -16,6 +16,7 @@ import {
   createLogger,
 } from '@abr/core';
 import type { RuntimeConfig, RuntimeLogger } from '@abr/core';
+import { CompatibleEngine } from '@abr/playwright-worker';
 
 export interface Application {
   runtime: Runtime;
@@ -42,6 +43,17 @@ export function createApplication(config: RuntimeConfig): Application {
   });
   const policy = new PolicyEngine(config, dataDirectory);
   const registry = new EngineRegistry();
+  // Register the official compatible adapter without starting a browser for read-only commands.
+  registry.register(
+    new CompatibleEngine({
+      profileRoot: policy.profileRoot,
+      artifactRoot: path.join(dataDirectory, 'worker-artifacts'),
+      ...(config.browser.executablePath ? { executablePath: config.browser.executablePath } : {}),
+      putScreenshot(sessionId, bytes) {
+        return artifacts.putPng(sessionId, bytes);
+      },
+    }),
+  );
   const runtime = new Runtime(registry, policy, {
     maxSessions: config.runtime.maxSessions,
     actionTimeoutMs: config.runtime.actionTimeoutMs,

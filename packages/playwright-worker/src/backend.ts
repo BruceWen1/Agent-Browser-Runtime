@@ -251,6 +251,9 @@ export class PlaywrightBackend {
     // Admit references only after the complete bounded tree has been constructed.
     if (state.nodes.size > 5000)
       throw new BrowserError('DESKTOP_BUSY', 'Accessibility snapshot exceeds its node quota.');
+    const protectedRegions = await this.protectedRegions(state);
+    // Filter protected control descendants before crossing the worker IPC boundary.
+    this.protectNodes(root, protectedRegions);
     const pages = state.context.pages();
     for (const page of pages)
       if (![...state.tabs.values()].includes(page)) state.tabs.set(randomUUID(), page);
@@ -297,6 +300,55 @@ export class PlaywrightBackend {
         'Target has no current interactive browser reference.',
       );
     return state.page.locator(`aria-ref=${entry.ref}`);
+  }
+
+  /**
+   * Read sensitive control bounds through official read-only locator methods.
+   * Args:
+   *   state (PageState): Worker-owned browser state.
+   * Returns:
+   *   Promise<RedactionRectangle[]>: Sensitive CSS viewport rectangles.
+   */
+  private async protectedRegions(state: PageState): Promise<RedactionRectangle[]> {
+    const inputs = await state.page
+      .locator(
+        'input[type=password], input[autocomplete="cc-number"], input[autocomplete="cc-csc"]',
+      )
+      .all();
+    const rectangles: RedactionRectangle[] = [];
+    // Visible sensitive controls contribute their actual browser layout bounds.
+    for (const input of inputs) {
+      const box = await input.boundingBox();
+      if (box) rectangles.push(box);
+    }
+    return rectangles;
+  }
+
+  /**
+   * Filter sensitive accessibility values and descendants by control geometry.
+   * Args:
+   *   node (AxNode): Standardized accessibility subtree.
+   *   rectangles (RedactionRectangle[]): Sensitive control rectangles.
+   * Returns:
+   *   void: Completion of privacy filtering within the worker.
+   */
+  private protectNodes(node: AxNode, rectangles: RedactionRectangle[]): void {
+    const box = node.bounds;
+    const protectedControl =
+      box &&
+      ['textbox', 'spinbutton', 'combobox', 'password'].includes(node.role) &&
+      rectangles.some(
+        (rectangle) => Math.abs(rectangle.x - box.x) < 2 && Math.abs(rectangle.y - box.y) < 2,
+      );
+    // Keep target identity and bounds while removing complete protected text subtrees.
+    if (protectedControl) {
+      node.states.push('protected');
+      node.name = 'Protected input';
+      node.value = '[REDACTED]';
+      node.children = [];
+      return;
+    }
+    for (const child of node.children ?? []) this.protectNodes(child, rectangles);
   }
 
   /**

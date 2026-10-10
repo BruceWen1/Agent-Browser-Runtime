@@ -20,6 +20,7 @@
     "@abr/contracts": "workspace:*",
     "@abr/core": "workspace:*",
     "@abr/mcp-server": "workspace:*",
+    "@abr/playwright-worker": "workspace:*",
     "yaml": "2.9.1"
   }
 }
