@@ -1,0 +1,90 @@
+# release.yml
+# Verified development packaging and protected production gates
+# =====================
+# Build each platform locally and retain production approval requirements.
+name: Release packaging
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Select development packaging or protected production verification.
+        required: true
+        type: choice
+        default: development
+        options: [development, production]
+
+permissions:
+  contents: read
+
+jobs:
+  development:
+    if: inputs.channel == 'development'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win32-x64
+            native: target/release/abr-desktop-agent.exe
+          - os: macos-latest
+            target: darwin-arm64
+            native: target/release/abr-desktop-agent
+          - os: ubuntu-24.04
+            target: linux-x64
+            native: target/release/abr-desktop-agent
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+      - name: Verify native runner identity
+        run: node release/ci-target.mjs ${{ matrix.target }}
+      - name: Prepare pinned package manager
+        run: |
+          npm install --global corepack@0.34.6
+          corepack enable
+          corepack pnpm install --frozen-lockfile
+      - name: Prepare pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
+          rustup override set 1.99.0
+      - name: Validate source and release transactions
+        run: |
+          corepack pnpm typecheck
+          corepack pnpm lint
+          node --test release/update.test.mjs release/package.test.mjs
+          cargo test --workspace --locked
+          cargo build --workspace --release --locked
+      - name: Install official headed browser assets
+        run: corepack pnpm --filter @abr/playwright-worker exec playwright install chromium --no-shell
+      - name: Create host development archive
+        run: node release/package.mjs --native-agent ${{ matrix.native }} --output .cache/release
+      - name: Verify actual archive execution in isolated storage
+        run: |
+          $abrManifest = Get-ChildItem -LiteralPath .cache/release -Filter '*.manifest.json' | Select-Object -First 1
+          $abrArchiveName = $abrManifest.Name.Substring(0, $abrManifest.Name.Length - '.manifest.json'.Length)
+          $abrArchive = Join-Path $abrManifest.DirectoryName $abrArchiveName
+          $abrDigest = (Get-FileHash -LiteralPath $abrArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+          node release/package-smoke.mjs --archive $abrArchive --sha256 $abrDigest
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: abr-development-${{ matrix.target }}
+          path: .cache/release/*
+          if-no-files-found: error
+
+  production-gates:
+    if: inputs.channel == 'production'
+    runs-on: ubuntu-24.04
+    environment: production-release
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+      - name: Require approved source, signing, notarization, and physical baselines
+        run: node release/ci-production.mjs

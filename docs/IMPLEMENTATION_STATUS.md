@@ -1,27 +1,25 @@
-# 实施进度记录（启动模板）
+# 实施进度
 
-基线：2026-10-10；当前状态：**IMPLEMENTING**。TASK-001 至 TASK-008 已完成共享基础、浏览器外部契约测试、MCP stdio 与 CLI 验证，正在接入实际浏览器后端。
+基线日期为 2026-10-10。共享运行时、官方 Compatible、原生桌面后端、GUI/Native 适配器、事件比较、独立控制与审批、构建和发布工具已建立。实现、编译、物理交互验收与生产发布分别记录。
 
-## 任务状态
+| 范围 | 实现与验证 | 当前验收范围 |
+| --- | --- | --- |
+| TASK-001 至 008 | 工程、闭合契约、会话、策略、Fake 测试适配器、MCP、产物和 CLI | 真实 stdio 与 Inspector 21 工具目录已验证 |
+| TASK-009 至 010 | 官方 Playwright 1.64.0 原样集成，Chrome for Testing 156.0.8078.4 | Windows 两项 headed Compatible E2E 已通过 |
+| TASK-011 | 4 MiB 分帧、继承启动密钥、双向 HMAC v2、当前用户 IPC、并发关联和断线取消 | Windows Rust/Node 真实认证 IPC 已通过；替换端点拒绝已验证；Unix 权限实机待验收 |
+| TASK-012 | Windows UIA、WGC、SendInput、原子导航、IME 策略、原始进程句柄关闭 | 单屏当前 DPI 的 GUI 主流程已通过；125% DPI、多屏、手工 IME、文件选择验收待执行 |
+| TASK-013 至 014 | macOS AX/Quartz/SCK、Linux AT-SPI/X11/XTest/XInput2 | Linux Rust 跨目标检查通过；macOS Rust 检查通过，Swift/系统链接和两平台实机待验收 |
+| TASK-015 | Wayland Portal 能力发现和显式权限/不可用结果 | 授权流与窗口绑定的 EIS 输入通道待实施 |
+| TASK-016 至 017 | GUI 目标、空间转换、坐标语义授权、审批目标绑定、独立引用缓存、输入独占和生产 MCP 注册 | Windows 系统输入主流程已验证；58 项非桌面检查通过，完整 MCP GUI 与扩展场景继续验收 |
+| TASK-018 至 019 | 23 个自有 fixture、真实事件记录、严格比较、候选基线与人工审核 | 7 项 fixture/parity 测试通过；人工轨迹基线保持待审核 |
+| TASK-020 | Windows 独立审批进程、Pause/Resume/Stop 控制窗口与定向前台授权 | 协议/编译测试通过；实际按钮、热键和其他平台 UI 待人工验收 |
+| TASK-021 | 完整上游 SHA、DEPS、depot_tools、工具链、恢复/同步/补丁/构建管线 | Windows 工具链、156 个 Git scope、89 项 CIPD、同步和 hooks 通过；原版 GN 通过，本地编译进行中 |
+| TASK-022 至 023 | 浏览器层只读 C++ Bridge、可回放 patch、版本认证与 Native OS 输入适配器 | Windows HWND 映射、patch 应用检查和适配器单元测试通过；C++ 编译、Native 实机/MCP 以及 Unix 原生窗口映射待完成 |
+| TASK-024 | A1/A2 独立证据、研究工具与默认关闭的实验边界 | 静态证据和边界测试通过；完整同版本 A/B/C/D 物理轨迹继续验收 |
+| TASK-025 | 版本清单、真实 SBOM、ZIP、校验、签名门禁、安装/升级/回滚 | 完整 Windows 开发包已隔离安装验证；正式签名、公证和三平台生产基线待提供 |
 
-| 任务范围 | 状态 | 测试证据 | 阻塞 |
-|---|---|---|---|
-| TASK-001 ~ 004 / 工程、契约、会话、策略 | Implemented | TypeScript、lint、13 项契约/单元测试及 Rust 骨架检查 | Rust IPC 往返在 TASK-011 补齐 |
-| TASK-005 ~ 008 / FakeEngine、MCP、产物、CLI | Implemented | 17 项单测、4 项契约测试、真实 MCP stdio、Inspector 21 工具目录 | 生产浏览器与 GUI 后端继续推进 |
-| TASK-009 ~ 010 / Compatible | Implemented on Windows | Chrome for Testing 156.0.8078.4；2 项 headed E2E、MCP 与隐私断言 | macOS/Linux 实机组合待验收 |
-| TASK-011 ~ 017 / GUI 后端 | Not Started | — | 需要各 OS 真实 GUI 权限 |
-| TASK-018 ~ 020 / 一致性和审批 | Not Started | — | 需要 Agent 和 fixture |
-| TASK-021 ~ 023 / Chromium Native | Not Started | — | 需锁定上游 commit 与构建机器 |
-| TASK-024 / A1/A2 实验 | Not Started | — | 先完成 A/B GUI 实测 |
-| TASK-025 / 发布 | Not Started | — | 需全量回归与签名 |
+生产启动仅注册实际存在的适配器。Native 需要用户显式启用、自定义 Chromium 可执行文件及匹配的私有只读握手；版本或权限不匹配返回稳定错误。GUI 文本返回实际 `os-keyboard` 或 `os-unicode` 策略，IME 组合使用独立能力门禁。
 
-### 每个任务结束后填报
+Windows 开发包为 `abr-0.1.0-win32-x64-development-157b7f2891e5.zip`，大小 267240365 bytes，SHA-256 为 `157b7f2891e51620473da792602d846bbe762761739993ed7d45c258d992d9f5`。包内 Native availability 为 false，DesktopAgent buildAttestation 为 null，保留实际二进制校验和和验收状态。
 
-- Task ID / RPD IDs：
-- 当前 Git commit：
-- 变更文件：
-- 本地测试命令：
-- 测试通过结果：
-- 无法执行的 OS/硬件项目及理由：
-- 安全/兼容性改变：
-- 下一任务：
+人工基线审核、macOS/Linux 物理设备、正式发布证书和 Chromium 实际编译结果构成独立发布条件。自动测试产物采用 candidate provenance，发布工具依据实际条件生成结果。

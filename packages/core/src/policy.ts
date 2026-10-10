@@ -9,12 +9,12 @@ import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { BrowserError } from '@abr/contracts';
+import { BrowserError, semanticIdentity } from '@abr/contracts';
 import type { ActionRequest, AxNode, BrowserSession, CreateSessionRequest } from '@abr/contracts';
 
 import { applicationDataDirectory, expandPath } from './config.js';
 import type { RuntimeConfig } from './config.js';
-import type { RuntimeGuard } from './runtime.js';
+import type { RuntimeGuard, SemanticAuthorizationContext } from './runtime.js';
 import { requestDigest } from './identity.js';
 
 interface OriginPattern {
@@ -112,6 +112,19 @@ export class PolicyEngine implements RuntimeGuard {
   private readonly approvals = new Map<string, ApprovalRecord>();
   private readonly approvalKeys = new Map<string, string>();
   private readonly approvalUrls = new Map<string, string>();
+  private readonly approvalScopes = new Map<string, string>();
+  private approvalListener: ((record: ApprovalRecord, digest: string) => void) | undefined;
+
+  /**
+   * Connect pending operation notifications to an independent local review provider.
+   * Args:
+   *   listener (function): Trusted application callback receiving bounded metadata.
+   * Returns:
+   *   void: Completion of local review provider registration.
+   */
+  setApprovalListener(listener: (record: ApprovalRecord, digest: string) => void): void {
+    this.approvalListener = listener;
+  }
 
   /**
    * Initialize origin and path policy from validated local configuration.
@@ -275,7 +288,7 @@ export class PolicyEngine implements RuntimeGuard {
       !isWithin(await realpath(this.profileRoot), await realpath(candidate))
     )
       throw new BrowserError('POLICY_DENIED', 'Profile cleanup ownership is invalid.');
-    await rm(candidate, { recursive: true, force: true });
+    await rm(candidate, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 
   /**
@@ -380,10 +393,16 @@ export class PolicyEngine implements RuntimeGuard {
    *   input (ActionRequest): Strict runtime operation.
    *   currentUrl (string): Current trusted browser URL.
    *   target (AxNode | undefined): Selected semantic target when available.
+   *   context (SemanticAuthorizationContext | undefined): Complete operation target identity.
    * Returns:
    *   Promise<void>: Completion of authorization or an approval challenge.
    */
-  async authorize(input: ActionRequest, currentUrl: string, target?: AxNode): Promise<void> {
+  async authorize(
+    input: ActionRequest,
+    currentUrl: string,
+    target?: AxNode,
+    context?: SemanticAuthorizationContext,
+  ): Promise<void> {
     // Initial blank pages accept only navigation to an authorized destination.
     if (input.action === 'navigate') {
       this.checkUrl(input.sessionId, String(input.args?.url));
@@ -391,35 +410,53 @@ export class PolicyEngine implements RuntimeGuard {
     } else this.checkUrl(input.sessionId, currentUrl);
     // File transfers additionally require canonical file path authorization.
     if (input.action === 'choose-file') await this.checkUpload(String(input.args?.filePath));
-    const sensitiveName =
-      /(?:pay|payment|purchase|delete|send message|upload|付款|支付|删除|发送|上传)/i.test(
-        target?.name ?? '',
-      );
-    const customSensitive = this.config.policy.sensitiveTargetPatterns.some((pattern) =>
-      (target?.name ?? '').includes(pattern),
-    );
+    const targets = context?.targets ?? (target ? [target] : []);
+    const risk: string[] = input.action === 'choose-file' ? ['file-upload'] : [];
+    // Classify the complete target set so every drag endpoint shares the same decision scope.
+    for (const node of targets) {
+      const name = node.name ?? '';
+      for (const [category, pattern] of [
+        ['payment', /(?:pay|payment|purchase|付款|支付)/i],
+        ['delete', /(?:delete|删除)/i],
+        ['send-message', /(?:send message|发送)/i],
+        ['file-upload', /(?:upload|上传)/i],
+      ] as const)
+        if (pattern.test(name)) risk.push(category);
+      if (this.config.policy.sensitiveTargetPatterns.some((pattern) => name.includes(pattern)))
+        risk.push('configured-sensitive');
+    }
     // Require a local user decision for explicit transfers and configured sensitive controls.
-    if (input.action !== 'choose-file' && !sensitiveName && !customSensitive) return;
+    if (risk.length === 0) return;
+    const scope = requestDigest({
+      source: context?.source ?? null,
+      windowId: context?.windowId ?? null,
+      tabId: context?.tabId ?? null,
+      targets: semanticIdentity(targets),
+      risk: [...new Set(risk)].sort(),
+    });
     const key = this.key(input);
     let id = this.approvalKeys.get(key);
     const existing = id ? this.approvals.get(id) : undefined;
     if (
       existing?.status === 'approved' &&
+      this.approvalScopes.get(existing.id) === scope &&
       this.approvalUrls.get(existing.id) === currentUrl &&
       Date.parse(existing.expiresAt) > Date.now()
     )
       return;
-    if (existing?.status === 'denied')
+    if (existing?.status === 'denied' && this.approvalScopes.get(existing.id) === scope)
       throw new BrowserError('POLICY_DENIED', 'The local user denied this operation.');
     // Create a bounded review record containing identifiers and origin only.
     if (
       !existing ||
       Date.parse(existing.expiresAt) <= Date.now() ||
-      this.approvalUrls.get(existing.id) !== currentUrl
+      this.approvalUrls.get(existing.id) !== currentUrl ||
+      this.approvalScopes.get(existing.id) !== scope
     ) {
       id = randomUUID();
       this.approvalKeys.set(key, id);
       this.approvalUrls.set(id, currentUrl);
+      this.approvalScopes.set(id, scope);
       this.approvals.set(id, {
         id,
         status: 'pending',
@@ -430,8 +467,29 @@ export class PolicyEngine implements RuntimeGuard {
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 300000).toISOString(),
       });
+      this.approvalListener?.(
+        structuredClone(this.approvals.get(id)!),
+        requestDigest({ inputKey: key, semanticScope: scope }),
+      );
     }
     throw new ApprovalRequiredError(id!);
+  }
+
+  /**
+   * Authorize all observed operation targets under one stable semantic approval scope.
+   * Args:
+   *   input (ActionRequest): Exact operation identity.
+   *   currentUrl (string): Current trusted browser URL.
+   *   context (SemanticAuthorizationContext): Complete source, window, tab, and semantic targets.
+   * Returns:
+   *   Promise<void>: Admission or a single bounded approval challenge.
+   */
+  async authorizeTargets(
+    input: ActionRequest,
+    currentUrl: string,
+    context: SemanticAuthorizationContext,
+  ): Promise<void> {
+    await this.authorize(input, currentUrl, context.targets[0], context);
   }
 
   /**

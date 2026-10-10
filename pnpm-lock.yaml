@@ -250,6 +250,9 @@ importers:
       '@abr/mcp-server':
         specifier: workspace:*
         version: link:../mcp-server
+      '@abr/native-ipc-client':
+        specifier: workspace:*
+        version: link:../native-ipc-client
       '@abr/playwright-worker':
         specifier: workspace:*
         version: link:../playwright-worker
@@ -305,7 +308,15 @@ importers:
         specifier: 1.64.0
         version: 1.64.0
 
-  packages/test-fixtures: {}
+  packages/test-fixtures:
+    dependencies:
+      '@abr/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+    devDependencies:
+      playwright:
+        specifier: 1.64.0
+        version: 1.64.0
 
 packages:
 

@@ -13,7 +13,26 @@
       "additionalProperties": false,
       "required": ["code", "message", "retryable"],
       "properties": {
-        "code": { "type": "string" },
+        "code": {
+          "enum": [
+            "INVALID_ARGUMENT",
+            "SESSION_NOT_FOUND",
+            "SESSION_CLOSED",
+            "UNSUPPORTED_CAPABILITY",
+            "PERMISSION_REQUIRED",
+            "APPROVAL_REQUIRED",
+            "POLICY_DENIED",
+            "TARGET_STALE",
+            "TARGET_NOT_FOUND",
+            "TARGET_OCCLUDED",
+            "FOCUS_LOST",
+            "DESKTOP_BUSY",
+            "INPUT_BACKEND_UNAVAILABLE",
+            "BROWSER_DISCONNECTED",
+            "TIMEOUT",
+            "INTERNAL_ERROR"
+          ]
+        },
         "message": { "type": "string", "maxLength": 1024 },
         "retryable": { "type": "boolean" },
         "nextAction": { "type": "string" }

@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { BrowserError, CAPABILITIES } from '@abr/contracts';
+import { BrowserError, CAPABILITIES, validateCoordinateInspection } from '@abr/contracts';
 import type {
   ActionRequest,
   ActionResult,
@@ -195,6 +195,27 @@ export class FakeBrowserEngine implements BrowserEngine {
   }
 
   /**
+   * Produce independent test geometry without changing the public reference snapshot ID.
+   * Args:
+   *   id (string): Owned fake session identifier.
+   * Returns:
+   *   Promise<BrowserSnapshot>: Explicit fake inspection with unit-scale viewport metadata.
+   */
+  async inspectionSnapshot(id: string): Promise<BrowserSnapshot> {
+    const snapshot = await this.observe(id);
+    return {
+      ...snapshot,
+      snapshotId: randomUUID(),
+      geometry: {
+        windowOrigin: { x: 0, y: 0 },
+        viewportOrigin: { x: 0, y: 0 },
+        monitorScale: 1,
+        viewportMetricsVerified: true,
+      },
+    };
+  }
+
+  /**
    * Store a fixed fixture PNG through the test artifact writer.
    * Args:
    *   id (string): Fake session identifier.
@@ -212,13 +233,21 @@ export class FakeBrowserEngine implements BrowserEngine {
    * Apply a simulated operation without generating physical or trusted input.
    * Args:
    *   input (ActionRequest): Validated simulated operation.
+   *   inspection (BrowserSnapshot | undefined): Independent coordinate authorization witness.
    * Returns:
    *   Promise<ActionResult>: Result explicitly identifying the unexecuted physical path.
    */
-  async execute(input: ActionRequest): Promise<ActionResult> {
+  async execute(input: ActionRequest, inspection?: BrowserSnapshot): Promise<ActionResult> {
     const state = this.state(input.sessionId);
     const startedAt = new Date().toISOString();
     if (state.paused) throw new BrowserError('DESKTOP_BUSY', 'Test session is paused.');
+    // Reproduce semantic freshness checks without injecting physical or trusted input.
+    if (inspection)
+      validateCoordinateInspection(
+        input,
+        inspection,
+        await this.inspectionSnapshot(input.sessionId),
+      );
     // Verify stale references and cross-session coordinate ownership independently.
     if (input.target?.kind === 'ax-node' && input.target.snapshotId !== state.snapshotId)
       throw new BrowserError('TARGET_STALE', 'Test target has expired.');

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "source": "official-playwright-npm-package",
+  "package": "playwright-core",
+  "version": "1.64.0",
+  "license": "Apache-2.0",
+  "sourceFile": "lib/coreBundle.js",
+  "sourceSha256": "2325ca4c1c83070e89dc49fb82525508f0a68e0cf12e2a624277968da216b7e0",
+  "observations": {
+    "Input.dispatchMouseEvent": [37197, 37216, 37232, 37243, 47709, 47719, 47730],
+    "Input.dispatchKeyEvent": [37159, 37175, 47673, 47688],
+    "Input.insertText": [37186, 50375],
+    "DOM.setFileInputFiles": [38860],
+    "injected.selectOptions": [21514]
+  },
+  "matrix": [
+    {
+      "command": "Input.dispatchMouseEvent(mouseMoved,buttons=0)",
+      "observedPath": "CDP pointer input",
+      "prototype": "owned-fixture pointer-move",
+      "parity": "pending-real-OS-input-comparison"
+    },
+    {
+      "command": "Input.dispatchMouseEvent(mousePressed/mouseReleased)",
+      "observedPath": "independent CDP button transitions",
+      "prototype": "unsupported-independent-button-callbacks",
+      "parity": "not-implemented"
+    },
+    {
+      "command": "Input.dispatchKeyEvent(keyDown/keyUp)",
+      "observedPath": "independent CDP keyboard transitions",
+      "prototype": "unsupported-independent-key-callbacks",
+      "parity": "not-implemented"
+    },
+    {
+      "command": "Input.insertText",
+      "observedPath": "CDP text submission",
+      "prototype": "owned-fixture type-text with actualStrategy",
+      "parity": "pending-text-input-composition-comparison"
+    },
+    {
+      "command": "selectOption",
+      "observedPath": "injected DOM option selection",
+      "prototype": "not-gui-equivalent",
+      "parity": "unsupported"
+    },
+    {
+      "command": "Runtime.evaluate",
+      "observedPath": "JavaScript evaluation",
+      "prototype": "not-gui-equivalent",
+      "parity": "unsupported"
+    },
+    {
+      "command": "DOM.setFileInputFiles",
+      "observedPath": "CDP file input assignment",
+      "prototype": "not-gui-equivalent",
+      "parity": "unsupported"
+    },
+    {
+      "command": "network routing/context permission mutation",
+      "observedPath": "protocol or context control",
+      "prototype": "not-gui-equivalent",
+      "parity": "unsupported"
+    }
+  ],
+  "securityBehaviorChanges": [],
+  "validation": {
+    "staticSourceInspection": "completed",
+    "a1SameBuildManualBaseline": "pending",
+    "a2RealOsInputParity": "pending",
+    "patchedBrowser": "pending-compiled-observer"
+  }
+}

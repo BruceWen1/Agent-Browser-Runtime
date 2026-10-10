@@ -16,6 +16,7 @@
     "build": "tsc -b"
   },
   "dependencies": {
+    "@abr/native-ipc-client": "workspace:*",
     "@abr/artifacts": "workspace:*",
     "@abr/contracts": "workspace:*",
     "@abr/core": "workspace:*",

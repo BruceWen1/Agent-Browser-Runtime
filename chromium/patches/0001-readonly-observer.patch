@@ -1,0 +1,1737 @@
+From 7eba616f0160aacdbdfa8e346df687cec39530c7 Mon Sep 17 00:00:00 2001
+From: ABR Build Pipeline <abr@localhost>
+Date: Sat, 10 Oct 2026 18:06:28 +0800
+Subject: [PATCH] Add opt-in current-user browser accessibility observer
+
+---
+ chrome/browser/BUILD.gn                            |  26 +
+ chrome/browser/abr_native_observer/auth_policy.h   |  68 ++
+ chrome/browser/abr_native_observer/observer.cc     | 597 +++++++++++++++++
+ chrome/browser/abr_native_observer/observer.h      |  28 +
+ .../abr_native_observer/observer_transport.cc      | 736 +++++++++++++++++++++
+ .../abr_native_observer/observer_transport.h       |  55 ++
+ .../browser/abr_native_observer/privacy_policy.h   | 113 ++++
+ chrome/browser/chrome_browser_main.cc              |  10 +
+ 8 files changed, 1633 insertions(+)
+
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index 33a6696fd803af080bb0a7d71b66e06d6950f86d..0663a9aceb11441beabfc591207cec48ea4a16cf 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -60,6 +60,8 @@ if (is_win) {
+ assert(!is_fuchsia, "Fuchsia shouldn't use anything in //chrome")
+ 
+ declare_args() {
++  # Enable the scoped current-user read-only browser observer.
++  abr_native_observer = false
+   # You can set the variable 'use_official_enterprise_connectors_api_keys' to
+   # true to use the Google-internal file containing official API keys
+   # for enterprise connector partners even in a developer build.  Setting this
+@@ -93,6 +95,7 @@ if (is_win) {
+ buildflag_header("buildflags") {
+   header = "buildflags.h"
+   flags = [
++    "ENABLE_ABR_NATIVE_OBSERVER=$abr_native_observer",
+     "ENABLE_UPDATER=$enable_updater",
+     "ENABLE_UPDATE_NOTIFICATIONS=$enable_update_notifications",
+     "USE_MINIKIN_HYPHENATION=$use_minikin_hyphenation",
+@@ -2015,6 +2018,29 @@ source_set("core") {
+       "//chrome/common/request_header_integrity",
+     ]
+   }
++
++  if (abr_native_observer) {
++    assert(!is_android && (is_win || is_mac || is_linux),
++           "ABR observer supports desktop Windows, macOS, and Linux targets.")
++    sources += [
++      "abr_native_observer/auth_policy.h",
++      "abr_native_observer/observer.cc",
++      "abr_native_observer/observer.h",
++      "abr_native_observer/observer_transport.cc",
++      "abr_native_observer/observer_transport.h",
++      "abr_native_observer/privacy_policy.h",
++    ]
++    deps += [
++      "//components/sessions",
++      "//components/zoom",
++      "//components/version_info",
++      "//crypto",
++      "//ui/accessibility",
++    ]
++    if (is_win) {
++      libs += [ "advapi32.lib" ]
++    }
++  }
+ }
+ 
+ # This target no longer has any sources of its own; it only aggregates
+diff --git a/chrome/browser/abr_native_observer/auth_policy.h b/chrome/browser/abr_native_observer/auth_policy.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..1adabfffa125ca8301849e573cb1d6888c32c3e4
+--- /dev/null
++++ b/chrome/browser/abr_native_observer/auth_policy.h
+@@ -0,0 +1,68 @@
++// -*- coding: utf-8 -*-
++// auth_policy.h
++// Private local authentication transcript policy
++// =====================
++// Construct canonical role-separated HMAC messages from strictly bounded public metadata.
++
++#ifndef CHROME_BROWSER_ABR_NATIVE_OBSERVER_AUTH_POLICY_H_
++#define CHROME_BROWSER_ABR_NATIVE_OBSERVER_AUTH_POLICY_H_
++
++#include <cstdint>
++#include <optional>
++#include <string>
++#include <string_view>
++
++namespace abr::auth {
++
++// Validate one complete lowercase hexadecimal nonce or proof.
++// Args:
++//   value: Untrusted private authentication field.
++// Returns:
++//   bool: Whether the field represents exactly 32 bytes with canonical lowercase encoding.
++constexpr bool LowerHex64(std::string_view value) {
++  // The fixed encoding gives every authentication field a unique ASCII representation.
++  if (value.size() != 64) { return false; }
++  for (const unsigned char byte : value) {
++    if (!((byte >= '0' && byte <= '9') || (byte >= 'a' && byte <= 'f'))) {
++      return false;
++    }
++  }
++  return true;
++}
++
++// Construct the complete private authentication transcript with explicit role separation.
++// Args:
++//   name_space: Fixed observer or agent transport namespace selected by the implementation.
++//   direction: Fixed server or client proof direction.
++//   server_pid: Expected owned server process identity.
++//   client_nonce: Complete canonical client challenge nonce.
++//   server_nonce: Complete canonical server challenge nonce.
++// Returns:
++//   optional<string>: The canonical ASCII transcript when all metadata is valid.
++inline std::optional<std::string> Transcript(std::string_view name_space,
++                                            std::string_view direction,
++                                            std::uint32_t server_pid,
++                                            std::string_view client_nonce,
++                                            std::string_view server_nonce) {
++  // Keep all separators and domains implementation-controlled rather than caller-configurable.
++  if ((name_space != "observer" && name_space != "agent") ||
++      (direction != "server" && direction != "client") || server_pid == 0 ||
++      !LowerHex64(client_nonce) || !LowerHex64(server_nonce)) {
++    return std::nullopt;
++  }
++  std::string transcript("abr-local-ipc-auth-v2\n");
++  transcript.append(name_space);
++  transcript.push_back('\n');
++  transcript.append(direction);
++  transcript.push_back('\n');
++  transcript.append(std::to_string(server_pid));
++  transcript.push_back('\n');
++  transcript.append(client_nonce);
++  transcript.push_back('\n');
++  transcript.append(server_nonce);
++  return transcript;
++}
++
++}  // namespace abr::auth
++
++#endif  // CHROME_BROWSER_ABR_NATIVE_OBSERVER_AUTH_POLICY_H_
+diff --git a/chrome/browser/abr_native_observer/observer.cc b/chrome/browser/abr_native_observer/observer.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..e59ae4a0c874ef13bb5b087d110792201d8eb7eb
+--- /dev/null
++++ b/chrome/browser/abr_native_observer/observer.cc
+@@ -0,0 +1,597 @@
++// -*- coding: utf-8 -*-
++// observer.cc
++// Chromium browser-owned read-only observer
++// =====================
++// Read scoped browser, tab, accessibility, and viewport state on the browser UI thread.
++
++#include "chrome/browser/abr_native_observer/observer.h"
++
++#include <algorithm>
++#include <atomic>
++#include <chrono>
++#include <condition_variable>
++#include <initializer_list>
++#include <memory>
++#include <mutex>
++#include <optional>
++#include <set>
++#include <string>
++#include <utility>
++
++#include "base/command_line.h"
++#include "base/files/file_path.h"
++#include "base/functional/bind.h"
++#include "base/location.h"
++#include "base/memory/scoped_refptr.h"
++#include "base/no_destructor.h"
++#include "base/path_service.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/stringprintf.h"
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/task/single_thread_task_runner.h"
++#include "base/threading/thread.h"
++#include "base/values.h"
++#include "build/build_config.h"
++#include "chrome/browser/abr_native_observer/observer_transport.h"
++#include "chrome/browser/abr_native_observer/privacy_policy.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/common/chrome_paths.h"
++#include "components/sessions/content/session_tab_helper.h"
++#include "components/sessions/core/session_id.h"
++#include "components/version_info/version_info.h"
++#include "components/zoom/zoom_controller.h"
++#include "content/public/browser/browser_thread.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/render_widget_host_view.h"
++#include "content/public/browser/web_contents.h"
++#include "third_party/blink/public/common/page/page_zoom.h"
++#include "ui/accessibility/ax_enums.mojom.h"
++#include "ui/accessibility/ax_node_data.h"
++#include "ui/accessibility/ax_tree.h"
++#include "ui/accessibility/platform/browser_accessibility.h"
++#include "ui/accessibility/platform/browser_accessibility_manager.h"
++#include "ui/base/base_window.h"
++#include "ui/gfx/geometry/rect.h"
++
++#if BUILDFLAG(IS_WIN)
++#include <windows.h>
++#include "ui/aura/window.h"
++#include "ui/aura/window_tree_host.h"
++#endif
++
++namespace abr {
++namespace {
++
++// Bound cached AX reads and public strings independently from the wire limit.
++constexpr int kMaximumNodes = 6000;
++constexpr int kMaximumDepth = 32;
++constexpr char kBrowserCommit[] = "634b046faf2137b83af71c87baf362b533af9104";
++
++// Build a closed success response for one authenticated request.
++// Args:
++//   identifier: Correlation identifier copied from validated framing.
++//   value: Filtered browser-thread observation result.
++// Returns:
++//   base::Value: A versioned IPC response.
++base::Value Success(const std::string& identifier, base::Value value) {
++  base::DictValue result;
++  result.Set("schemaVersion", 1);
++  result.Set("requestId", identifier);
++  result.Set("ok", true);
++  result.Set("result", std::move(value));
++  return base::Value(std::move(result));
++}
++
++// Truncate renderer-controlled UTF-8 text through a safe Unicode conversion.
++// Args:
++//   value: Renderer accessibility text.
++//   maximum: Maximum UTF-16 code-unit count.
++// Returns:
++//   string: Bounded valid UTF-8 observation text.
++std::string PublicText(const std::string& value, size_t maximum) {
++  auto decoded = base::UTF8ToUTF16(value);
++  decoded.resize(std::min(decoded.size(), maximum));
++  return base::UTF16ToUTF8(decoded);
++}
++
++// Represent measured coordinates in a portable observation object.
++// Args:
++//   rectangle: Physical screen coordinates or explicitly labelled DIP geometry.
++// Returns:
++//   DictValue: Nonnegative rectangle dimensions.
++base::DictValue Rectangle(const gfx::Rect& rectangle) {
++  base::DictValue value;
++  value.Set("x", rectangle.x());
++  value.Set("y", rectangle.y());
++  value.Set("width", std::max(0, rectangle.width()));
++  value.Set("height", std::max(0, rectangle.height()));
++  return value;
++}
++
++// Map cached Chromium roles to common runtime accessibility labels.
++// Args:
++//   role: Chromium accessibility role.
++// Returns:
++//   const char*: A portable role label.
++const char* Role(ax::mojom::Role role) {
++  // Keep the portable set explicit and preserve generic composite containers.
++  switch (role) {
++    case ax::mojom::Role::kRootWebArea: return "document";
++    case ax::mojom::Role::kButton: return "button";
++    case ax::mojom::Role::kTextField: return "textbox";
++    case ax::mojom::Role::kTextFieldWithComboBox: return "combobox";
++    case ax::mojom::Role::kCheckBox: return "checkbox";
++    case ax::mojom::Role::kRadioButton: return "radio";
++    case ax::mojom::Role::kLink: return "link";
++    case ax::mojom::Role::kTab: return "tab";
++    case ax::mojom::Role::kTabList: return "tablist";
++    case ax::mojom::Role::kStaticText: return "text";
++    case ax::mojom::Role::kHeading: return "heading";
++    case ax::mojom::Role::kList: return "list";
++    case ax::mojom::Role::kListItem: return "listitem";
++    case ax::mojom::Role::kMenu: return "menu";
++    case ax::mojom::Role::kMenuItem: return "menuitem";
++    case ax::mojom::Role::kImage: return "image";
++    case ax::mojom::Role::kDialog: return "dialog";
++    default: return "group";
++  }
++}
++
++// Assign a stable browser-window identifier without exposing object addresses.
++// Args:
++//   browser: Browser window authorized for the isolated profile.
++// Returns:
++//   string: Session-backed browser window identifier.
++std::string WindowId(BrowserWindowInterface* browser) {
++  return "browser-" + base::NumberToString(browser->GetSessionID().id());
++}
++
++// Assign a stable tab identifier from the upstream session helper.
++// Args:
++//   contents: Authorized WebContents within the scoped browser.
++// Returns:
++//   string: Stable tab identifier.
++std::string TabId(content::WebContents* contents) {
++  return "tab-" + base::NumberToString(sessions::SessionTabHelper::IdForTab(contents).id());
++}
++
++// Read the current native HWND for a Windows browser window.
++// Args:
++//   browser: Browser window authorized for the isolated profile.
++// Returns:
++//   optional<string>: An OS window identifier when a native mapping is verified.
++std::optional<std::string> OsWindowId(BrowserWindowInterface* browser) {
++#if BUILDFLAG(IS_WIN)
++  const auto native = browser->GetWindow()->GetNativeWindow();
++  // Window hosts can be absent during browser teardown.
++  if (!native || !native->GetHost()) { return std::nullopt; }
++  HWND handle = native->GetHost()->GetAcceleratedWidget();
++  DWORD process = 0;
++  GetWindowThreadProcessId(handle, &process);
++  // The observer exposes only current-browser-process HWND mappings.
++  if (!IsWindow(handle) || process != GetCurrentProcessId()) { return std::nullopt; }
++  return "hwnd-" + base::StringPrintf("%llx", static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(handle)));
++#else
++  // Platform mappings require a separately validated native-window adapter.
++  return std::nullopt;
++#endif
++}
++
++// Resolve the current main frame's browser-owned accessibility cache.
++// Args:
++//   contents: WebContents selected from an authorized tab strip.
++// Returns:
++//   BrowserAccessibility*: The cached document root or unavailable state.
++ui::BrowserAccessibility* AccessibilityRoot(content::WebContents* contents) {
++  auto* frame = contents->GetPrimaryMainFrame();
++  if (!frame) { return nullptr; }
++  auto* manager = ui::BrowserAccessibilityManager::FromID(frame->GetAXTreeID());
++  return manager ? manager->GetBrowserAccessibilityRoot() : nullptr;
++}
++
++// Identify cached roles eligible for independent Card field-name protection.
++// Args:
++//   role: Renderer-cached accessibility role.
++// Returns:
++//   bool: Whether the role represents an input or a field label.
++bool CardFieldOrLabel(ax::mojom::Role role) {
++  // Restrict the added Card rule to controls and text labels rather than document containers.
++  switch (role) {
++    case ax::mojom::Role::kTextField:
++    case ax::mojom::Role::kTextFieldWithComboBox:
++    case ax::mojom::Role::kComboBoxGrouping:
++    case ax::mojom::Role::kComboBoxSelect:
++    case ax::mojom::Role::kSpinButton:
++    case ax::mojom::Role::kCheckBox:
++    case ax::mojom::Role::kRadioButton:
++    case ax::mojom::Role::kSwitch:
++    case ax::mojom::Role::kLabelText:
++    case ax::mojom::Role::kStaticText:
++    case ax::mojom::Role::kInlineTextBox:
++      return true;
++    default:
++      return false;
++  }
++}
++
++// Validate every sensitive pattern before resolving browser or accessibility objects.
++// Args:
++//   patterns: Optional authenticated literal pattern list.
++// Returns:
++//   bool: Whether all complete pattern strings satisfy the fixed protocol limits.
++bool ValidPatterns(const base::ListValue* patterns) {
++  // An absent list selects the built-in privacy rules.
++  if (!patterns) { return true; }
++  if (patterns->size() > 64) { return false; }
++  // Reject malformed elements as a whole request rather than selecting a partial policy.
++  for (const auto& pattern : *patterns) {
++    if (!pattern.is_string() || !privacy::ValidSensitivePattern(pattern.GetString())) {
++      return false;
++    }
++  }
++  return true;
++}
++
++// Identify protected cached nodes before reading names, values, or children.
++// Args:
++//   data: Browser-owned accessibility node data.
++//   patterns: Trusted sensitive-name pattern configuration.
++// Returns:
++//   bool: Whether the whole node subtree requires privacy filtering.
++bool Protected(const ui::AXNodeData& data, const base::ListValue* patterns) {
++  // Intrinsic password state protects values independently of localized labels.
++  if (data.HasState(ax::mojom::State::kProtected) || data.IsPasswordField()) { return true; }
++  // Existing HTML cache metadata strengthens filtering while retaining the selected AX mode.
++  for (const auto& attribute : data.html_attributes) {
++    if (privacy::AsciiEqual(attribute.first, "data-sensitive") ||
++        (privacy::AsciiEqual(attribute.first, "autocomplete") &&
++         privacy::SensitiveAutocomplete(attribute.second))) {
++      return true;
++    }
++  }
++  const auto name = base::ToLowerASCII(data.GetStringAttribute(ax::mojom::StringAttribute::kName));
++  if (privacy::SensitiveCardName(name, CardFieldOrLabel(data.role))) { return true; }
++  constexpr const char* defaults[] = {"password", "passphrase", "credit card", "card number", "security code", "cvv", "secret", "access token", "api key"};
++  // Apply bounded literal matching to names and trusted configuration.
++  for (const char* pattern : defaults) { if (name.find(pattern) != std::string::npos) { return true; } }
++  if (patterns) {
++    for (const auto& pattern : *patterns) {
++      if (name.find(base::ToLowerASCII(pattern.GetString())) != std::string::npos) { return true; }
++    }
++  }
++  return false;
++}
++
++// Validate a closed observation parameter set before choosing any default.
++// Args:
++//   params: Renderer-independent authenticated request parameters.
++//   names: Complete accepted parameter field names.
++// Returns:
++//   bool: Whether every field belongs to the declared method shape.
++bool Fields(const base::DictValue& params, std::initializer_list<std::string_view> names) {
++  // Reject unexpected fields without including their names or values in diagnostics.
++  for (auto entry : params) {
++    if (std::find(names.begin(), names.end(), entry.first) == names.end()) { return false; }
++  }
++  return true;
++}
++
++// Read a bounded cached node tree with exact upstream physical-screen geometry.
++// Args:
++//   node: Browser-owned cached accessibility node.
++//   depth: Current recursion level.
++//   maximum_depth: Trusted bounded depth limit.
++//   remaining: Remaining node budget.
++//   seen: Complete tree-and-node identity set for cycle rejection.
++//   patterns: Trusted literal sensitive name patterns.
++// Returns:
++//   optional<Value>: A privacy-filtered node or incomplete-read failure.
++std::optional<base::Value> Node(ui::BrowserAccessibility* node, int depth,
++                               int maximum_depth, int* remaining,
++                               std::set<std::string>* seen,
++                               const base::ListValue* patterns) {
++  // An incomplete bounded tree remains unavailable rather than becoming actionable.
++  if (!node || depth > maximum_depth || *remaining <= 0) { return std::nullopt; }
++  --*remaining;
++  const auto& data = node->GetData();
++  const std::string identifier = node->manager()->ax_tree()->data().tree_id.ToString() + ":" + base::NumberToString(data.id);
++  if (!seen->insert(identifier).second) { return std::nullopt; }
++  ui::AXOffscreenResult offscreen = ui::AXOffscreenResult::kOnscreen;
++  const gfx::Rect bounds = node->GetBoundsRect(ui::AXCoordinateSystem::kScreenPhysicalPixels, ui::AXClippingBehavior::kClipped, &offscreen);
++  const bool protected_node = Protected(data, patterns);
++  base::ListValue states;
++  if (protected_node) { states.Append("protected"); }
++  if (offscreen == ui::AXOffscreenResult::kOffscreen) { states.Append("offscreen"); }
++  if (data.GetIntAttribute(ax::mojom::IntAttribute::kRestriction) == static_cast<int>(ax::mojom::Restriction::kDisabled)) { states.Append("disabled"); }
++  if (node->IsFocused()) { states.Append("focused"); }
++  auto rectangle = Rectangle(bounds);
++  rectangle.Set("space", "screen-physical");
++  base::DictValue result;
++  result.Set("nodeId", identifier);
++  result.Set("role", Role(data.role));
++  result.Set("states", std::move(states));
++  result.Set("bounds", std::move(rectangle));
++  // Protected controls stop recursion before any readable value reaches the wire.
++  if (protected_node) { return base::Value(std::move(result)); }
++  result.Set("name", PublicText(data.GetStringAttribute(ax::mojom::StringAttribute::kName), 1024));
++  if (data.HasStringAttribute(ax::mojom::StringAttribute::kValue)) {
++    result.Set("value", PublicText(data.GetStringAttribute(ax::mojom::StringAttribute::kValue), 2048));
++  }
++  base::ListValue children;
++  // Platform children include browser-cache cross-frame accessibility descendants.
++  for (size_t index = 0; index < node->PlatformChildCount(); ++index) {
++    auto child = Node(node->PlatformGetChild(index), depth + 1, maximum_depth, remaining, seen, patterns);
++    if (!child) { return std::nullopt; }
++    children.Append(std::move(*child));
++  }
++  if (!children.empty()) { result.Set("children", std::move(children)); }
++  return base::Value(std::move(result));
++}
++
++// Read viewport metrics using cached AX screen coordinates and upstream zoom APIs.
++// Args:
++//   browser: Scoped browser window.
++//   contents: Scoped active or selected tab.
++// Returns:
++//   optional<DictValue>: Verified geometry when the view and native window exist.
++std::optional<base::DictValue> Metrics(BrowserWindowInterface* browser, content::WebContents* contents) {
++  auto* view = contents->GetRenderWidgetHostView();
++  auto* root = AccessibilityRoot(contents);
++  if (!view || !root) { return std::nullopt; }
++  const double zoom = blink::ZoomLevelToZoomFactor(zoom::ZoomController::GetZoomLevelForWebContents(contents));
++  const double scale = view->GetDeviceScaleFactor();
++  if (zoom <= 0 || scale <= 0) { return std::nullopt; }
++  const auto viewport = root->GetBoundsRect(ui::AXCoordinateSystem::kScreenPhysicalPixels, ui::AXClippingBehavior::kClipped);
++  gfx::Rect window = browser->GetWindow()->GetBounds();
++  bool verified = false;
++#if BUILDFLAG(IS_WIN)
++  const auto native = browser->GetWindow()->GetNativeWindow();
++  RECT physical = {};
++  // Exact HWND geometry supports physical-screen and CSS transforms on Windows.
++  if (!native || !native->GetHost() || !GetWindowRect(native->GetHost()->GetAcceleratedWidget(), &physical)) { return std::nullopt; }
++  window = gfx::Rect(physical.left, physical.top, physical.right - physical.left, physical.bottom - physical.top);
++  verified = true;
++#endif
++  base::DictValue geometry;
++  geometry.Set("windowOrigin", base::DictValue().Set("x", window.x()).Set("y", window.y()));
++  geometry.Set("viewportOrigin", base::DictValue().Set("x", viewport.x()).Set("y", viewport.y()));
++  geometry.Set("monitorScale", scale);
++  geometry.Set("viewportMetricsVerified", verified);
++  base::DictValue result;
++  result.Set("geometry", std::move(geometry));
++  result.Set("scale", base::DictValue().Set("dpr", scale * zoom).Set("zoom", zoom));
++  result.Set("windowBounds", Rectangle(window));
++  result.Set("viewportBounds", Rectangle(viewport));
++  result.Set("nativeWindowMappingVerified", verified);
++  return result;
++}
++
++// Reply
++// Carry one bounded worker-to-UI reply without accessing browser objects off-thread.
++struct Reply {
++  std::mutex mutex;
++  std::condition_variable ready;
++  bool completed = false;
++  std::optional<base::Value> result;
++};
++
++// ObserverRuntime
++// Own the scoped read-only UI service and its private blocking transport thread.
++class ObserverRuntime {
++ public:
++  // Create an initially stopped runtime with a dedicated observation worker.
++  // Args:
++  //   None: The Chromium startup hook supplies launch scope later.
++  // Returns:
++  //   ObserverRuntime: An inactive runtime.
++  ObserverRuntime() : worker_("ABRReadOnlyObserver") {}
++  // Start the opt-in observer with the browser's canonical data directory.
++  // Args:
++  //   None: Chromium's browser command line selects the launch scope.
++  // Returns:
++  //   None: A dedicated thread validates its inherited private bootstrap.
++  void Start() {
++    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++    // Start only in the browser process with an explicitly selected isolated profile.
++    if (!base::CommandLine::ForCurrentProcess()->HasSwitch("abr-observer") ||
++        !base::CommandLine::ForCurrentProcess()->HasSwitch("user-data-dir") ||
++        !base::PathService::Get(chrome::DIR_USER_DATA, &user_directory_) || !user_directory_.IsAbsolute()) { return; }
++    ui_runner_ = base::SingleThreadTaskRunner::GetCurrentDefault();
++    if (!worker_.Start()) { return; }
++    stopped_.store(false, std::memory_order_release);
++    worker_.task_runner()->PostTask(FROM_HERE, base::BindOnce(&ServeObserver, user_directory_, &stopped_, base::BindRepeating(&ObserverRuntime::Dispatch, base::Unretained(this))));
++  }
++  // Cancel private IO and join the worker before browser state teardown.
++  // Args:
++  //   None: The browser shutdown hook owns the lifecycle.
++  // Returns:
++  //   None: Pending transport and reply waits finish.
++  void Stop() {
++    stopped_.store(true, std::memory_order_release);
++    worker_.Stop();
++  }
++ private:
++  // Verify a browser belongs to the isolated authorized profile directory.
++  // Args:
++  //   browser: Enumerated browser UI object.
++  // Returns:
++  //   bool: Whether the browser is in the authorized persistent scope.
++  bool Authorized(BrowserWindowInterface* browser) const {
++    auto* profile = browser->GetProfile();
++    return !profile->IsOffTheRecord() && profile->GetPath().DirName() == user_directory_;
++  }
++  // Marshal one authenticated request to the browser UI thread.
++  // Args:
++  //   bootstrap: Authenticated launch metadata.
++  //   request: Closed protocol request.
++  // Returns:
++  //   Value: A UI result or fixed timeout/disconnected error.
++  base::Value Dispatch(const Bootstrap& bootstrap, base::DictValue request) {
++    const std::string identifier = *request.FindString("requestId");
++    auto reply = std::make_shared<Reply>();
++    if (!ui_runner_->PostTask(FROM_HERE, base::BindOnce(&ObserverRuntime::RunOnUI, base::Unretained(this), bootstrap.profile_id, std::move(request), reply))) {
++      return ObserverFailure(identifier, "BROWSER_DISCONNECTED", "Browser observation thread is unavailable");
++    }
++    std::unique_lock<std::mutex> lock(reply->mutex);
++    const auto started = std::chrono::steady_clock::now();
++    // Keep shutdown responsive while a busy UI thread delays a read-only request.
++    while (!reply->completed && !stopped_.load(std::memory_order_acquire) &&
++           std::chrono::steady_clock::now() - started < std::chrono::seconds(5)) {
++      reply->ready.wait_for(lock, std::chrono::milliseconds(25));
++    }
++    if (!reply->completed || !reply->result) { return ObserverFailure(identifier, "TIMEOUT", "Browser observation exceeded its deadline"); }
++    return std::move(*reply->result);
++  }
++  // Resolve one request exclusively on the browser UI thread.
++  // Args:
++  //   profile_id: Profile identity from the validated ownership marker.
++  //   request: Closed authenticated request.
++  //   reply: Shared completion state owned by the worker and UI task.
++  // Returns:
++  //   None: The worker receives a safe value through its condition variable.
++  void RunOnUI(std::string profile_id, base::DictValue request, std::shared_ptr<Reply> reply) {
++    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++    const std::string identifier = *request.FindString("requestId");
++    auto response = stopped_.load(std::memory_order_acquire)
++        ? ObserverFailure(identifier, "BROWSER_DISCONNECTED", "Browser observer is stopping")
++        : Read(profile_id, request);
++    // Publish the value before waking the worker; no browser objects cross threads.
++    { std::lock_guard<std::mutex> lock(reply->mutex); reply->result = std::move(response); reply->completed = true; }
++    reply->ready.notify_one();
++  }
++  // Read the closed observation method set from scoped browser objects.
++  // Args:
++  //   profile_id: Authorized profile marker identity.
++  //   request: Authenticated method and parameter object.
++  // Returns:
++  //   Value: Read-only method result or a fixed runtime failure.
++  base::Value Read(const std::string& profile_id, const base::DictValue& request) {
++    const auto& identifier = *request.FindString("requestId");
++    const auto& method = *request.FindString("method");
++    const auto& params = *request.FindDict("params");
++    // Hello and state expose only version and capability metadata.
++    if (method == "observer.hello" || method == "observer.getState") {
++      if (method == "observer.getState" && !params.empty()) { return ObserverFailure(identifier, "INVALID_ARGUMENT", "Observer state parameters are invalid"); }
++      base::DictValue state;
++      state.Set("schemaVersion", 1);
++      state.Set("protocolVersion", 1);
++      state.Set("authVersion", 2);
++      state.Set("observerVersion", "0.1.0");
++      state.Set("browserVersion", version_info::GetVersionNumber());
++      state.Set("browserCommit", kBrowserCommit);
++      state.Set("profileId", profile_id);
++      state.Set("featureFlags", base::DictValue().Set("readOnlyObserver", true).Set("osInput", false));
++      state.Set("subscriptions", false);
++      return Success(identifier, base::Value(std::move(state)));
++    }
++    const int limit = params.FindInt("limit").value_or(kMaximumNodes);
++    const int depth = params.FindInt("treeDepth").value_or(kMaximumDepth);
++    const auto* patterns = params.FindList("sensitivePatterns");
++    // Reject complete malformed privacy policies before enumerating or reading browser state.
++    if (method == "observer.readAccessibility" &&
++        (!Fields(params, {"tabId", "limit", "treeDepth", "sensitivePatterns"}) ||
++         (params.contains("limit") && !params.FindInt("limit")) ||
++         (params.contains("treeDepth") && !params.FindInt("treeDepth")) ||
++         (params.contains("sensitivePatterns") && !patterns) ||
++         !params.FindString("tabId") || limit <= 0 || limit > kMaximumNodes ||
++         depth <= 0 || depth > kMaximumDepth || !ValidPatterns(patterns))) {
++      return ObserverFailure(identifier, "INVALID_ARGUMENT", "Accessibility observation parameters are invalid");
++    }
++    // Resolve browser and tab identities only through the scoped global collection.
++    BrowserWindowInterface* selected_browser = nullptr;
++    content::WebContents* selected_tab = nullptr;
++    base::ListValue windows;
++    GlobalBrowserCollection::GetInstance()->ForEach([&](BrowserWindowInterface* browser) {
++      if (!Authorized(browser)) { return true; }
++      if (method == "observer.listWindows") {
++        base::DictValue window;
++        window.Set("windowId", WindowId(browser));
++        window.Set("active", browser->IsActive());
++        window.Set("bounds", Rectangle(browser->GetWindow()->GetBounds()));
++        window.Set("boundsSpace", "screen-dip");
++        auto native = OsWindowId(browser);
++        if (native) { window.Set("osWindowId", *native); }
++        windows.Append(std::move(window));
++      }
++      const auto* window_id = params.FindString("windowId");
++      if (window_id && *window_id == WindowId(browser)) { selected_browser = browser; }
++      const auto* tab_id = params.FindString("tabId");
++      if (tab_id) {
++        auto* tabs = browser->GetTabStripModel();
++        for (int index = 0; index < tabs->count(); ++index) {
++          auto* tab = tabs->GetWebContentsAt(index);
++          if (*tab_id == TabId(tab)) { selected_browser = browser; selected_tab = tab; }
++        }
++      }
++      return windows.size() < 64;
++    });
++    if (method == "observer.listWindows") {
++      if (!params.empty()) { return ObserverFailure(identifier, "INVALID_ARGUMENT", "Window enumeration parameters are invalid"); }
++      return Success(identifier, base::Value(std::move(windows)));
++    }
++    if (method == "observer.listTabs") {
++      if (params.size() != 1 || !params.FindString("windowId")) { return ObserverFailure(identifier, "INVALID_ARGUMENT", "Tab enumeration parameters are invalid"); }
++      if (!selected_browser) { return ObserverFailure(identifier, "TARGET_NOT_FOUND", "The authorized browser window is unavailable"); }
++      base::ListValue result;
++      auto* tabs = selected_browser->GetTabStripModel();
++      for (int index = 0; index < tabs->count(); ++index) {
++        auto* tab = tabs->GetWebContentsAt(index);
++        base::DictValue item;
++        item.Set("id", TabId(tab));
++        item.Set("title", PublicText(base::UTF16ToUTF8(tab->GetTitle()), 2048));
++        item.Set("url", tab->GetLastCommittedURL().spec());
++        item.Set("active", tab == tabs->GetActiveWebContents());
++        result.Append(std::move(item));
++      }
++      return Success(identifier, base::Value(std::move(result)));
++    }
++    // Every remaining supported read names a currently authorized tab.
++    if (method != "observer.readAccessibility" && method != "observer.getViewportMetrics") {
++      return ObserverFailure(identifier, "UNSUPPORTED_CAPABILITY", "The native observer method is unavailable");
++    }
++    if (!selected_browser || !selected_tab) { return ObserverFailure(identifier, "TARGET_NOT_FOUND", "The authorized browser tab is unavailable"); }
++    auto metrics = Metrics(selected_browser, selected_tab);
++    if (!metrics) { return ObserverFailure(identifier, "UNSUPPORTED_CAPABILITY", "Browser accessibility and viewport metrics are unavailable"); }
++    if (method == "observer.getViewportMetrics") {
++      if (params.size() != 1 || !params.FindString("tabId")) { return ObserverFailure(identifier, "INVALID_ARGUMENT", "Viewport parameters are invalid"); }
++      return Success(identifier, base::Value(std::move(*metrics)));
++    }
++    int remaining = limit;
++    std::set<std::string> seen;
++    auto root = Node(AccessibilityRoot(selected_tab), 0, depth, &remaining, &seen, patterns);
++    if (!root) { return ObserverFailure(identifier, "TIMEOUT", "The complete accessibility observation exceeded its limits"); }
++    metrics->Set("windowId", WindowId(selected_browser));
++    auto native = OsWindowId(selected_browser);
++    if (native) { metrics->Set("osWindowId", *native); }
++    metrics->Set("tabId", TabId(selected_tab));
++    metrics->Set("url", selected_tab->GetLastCommittedURL().spec());
++    metrics->Set("root", std::move(*root));
++    metrics->Set("source", "chromium-accessibility");
++    return Success(identifier, base::Value(std::move(*metrics)));
++  }
++  base::Thread worker_;
++  std::atomic<bool> stopped_{true};
++  base::FilePath user_directory_;
++  scoped_refptr<base::SingleThreadTaskRunner> ui_runner_;
++};
++
++// Return the browser-process-owned observer runtime.
++// Args:
++//   None: The runtime lives for the browser process and has explicit shutdown.
++// Returns:
++//   ObserverRuntime&: The single scoped observation service.
++ObserverRuntime& Runtime() {
++  static base::NoDestructor<ObserverRuntime> runtime;
++  return *runtime;
++}
++
++}  // namespace
++
++void StartNativeObserver() { Runtime().Start(); }
++void StopNativeObserver() { Runtime().Stop(); }
++
++}  // namespace abr
+diff --git a/chrome/browser/abr_native_observer/observer.h b/chrome/browser/abr_native_observer/observer.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e2fddbd9d041f7db522adb6c6f7e40bfc28b3d9
+--- /dev/null
++++ b/chrome/browser/abr_native_observer/observer.h
+@@ -0,0 +1,28 @@
++// -*- coding: utf-8 -*-
++// observer.h
++// Browser-owned native observation lifecycle
++// =====================
++// Start and stop an opt-in read-only service for one ABR-owned profile.
++
++#ifndef CHROME_BROWSER_ABR_NATIVE_OBSERVER_OBSERVER_H_
++#define CHROME_BROWSER_ABR_NATIVE_OBSERVER_OBSERVER_H_
++
++namespace abr {
++
++// Start the observer on the Chromium browser UI thread.
++// Args:
++//   None: The browser command line and inherited bootstrap select the scope.
++// Returns:
++//   None: An authorized bootstrap starts a protected local observation channel.
++void StartNativeObserver();
++
++// Stop the observer before browser profile and UI-thread teardown.
++// Args:
++//   None: The browser startup hook owns the observer lifetime.
++// Returns:
++//   None: Pending transport operations finish and the worker thread is joined.
++void StopNativeObserver();
++
++}  // namespace abr
++
++#endif  // CHROME_BROWSER_ABR_NATIVE_OBSERVER_OBSERVER_H_
+diff --git a/chrome/browser/abr_native_observer/observer_transport.cc b/chrome/browser/abr_native_observer/observer_transport.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..4471ef92d4301ce2844c8ca4848f4690a18bbb23
+--- /dev/null
++++ b/chrome/browser/abr_native_observer/observer_transport.cc
+@@ -0,0 +1,736 @@
++// -*- coding: utf-8 -*-
++// observer_transport.cc
++// Native observer private IPC transport
++// =====================
++// Authenticate an inherited bootstrap and enforce bounded current-user framing.
++
++#include "chrome/browser/abr_native_observer/observer_transport.h"
++
++#include <algorithm>
++#include <array>
++#include <chrono>
++#include <cstdint>
++#include <cstring>
++#include <limits>
++#include <memory>
++#include <optional>
++#include <string_view>
++#include <thread>
++#include <vector>
++
++#include "base/files/file_util.h"
++#include "base/containers/span.h"
++#include "base/json/json_reader.h"
++#include "base/json/json_writer.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/utf_string_conversions.h"
++#include "build/build_config.h"
++#include "chrome/browser/abr_native_observer/auth_policy.h"
++#include "components/version_info/version_info.h"
++#include "crypto/hmac.h"
++#include "crypto/random.h"
++#include "crypto/secure_util.h"
++
++#if BUILDFLAG(IS_WIN)
++#include <windows.h>
++#include <sddl.h>
++#else
++#include <poll.h>
++#include <sys/socket.h>
++#include <sys/stat.h>
++#include <sys/un.h>
++#include <unistd.h>
++#endif
++
++namespace abr {
++namespace {
++
++// Keep bootstrap, JSON depth, and wire allocation within fixed bounds.
++constexpr size_t kMaximumFrame = 4 * 1024 * 1024;
++constexpr size_t kMaximumBootstrap = 4096;
++constexpr char kBrowserCommit[] = "634b046faf2137b83af71c87baf362b533af9104";
++constexpr char kObserverVersion[] = "0.1.0";
++using OperationDeadline = std::optional<std::chrono::steady_clock::time_point>;
++
++// Encode a bounded versioned value into a compact UTF-8 JSON string.
++// Args:
++//   value: Sanitized protocol data.
++// Returns:
++//   optional<string>: A bounded serialization or an unavailable result.
++std::optional<std::string> Encode(const base::Value& value) {
++  auto bytes = base::WriteJson(value);
++  // Reject oversized responses before allocating an outgoing frame.
++  if (!bytes || bytes->empty() || bytes->size() > kMaximumFrame) {
++    return std::nullopt;
++  }
++  return bytes;
++}
++
++// Validate an opaque identifier used for a profile or request.
++// Args:
++//   value: Untrusted IPC identifier.
++// Returns:
++//   bool: Whether the identifier has an ASCII portable bounded shape.
++bool Identifier(std::string_view value) {
++  // Restrict identifiers independently from payload contents.
++  if (value.empty() || value.size() > 128) {
++    return false;
++  }
++  return std::all_of(value.begin(), value.end(), [](unsigned char character) {
++    return (character >= 'a' && character <= 'z') ||
++           (character >= 'A' && character <= 'Z') ||
++           (character >= '0' && character <= '9') || character == '-' ||
++           character == '_';
++  });
++}
++
++// AuthenticationKey
++// Keep decoded authentication material private and clear it on every lifecycle exit.
++struct AuthenticationKey {
++  std::array<uint8_t, 32> bytes = {};
++  // Clear the complete authentication key before releasing its private stack storage.
++  // Args:
++  //   None: This object owns the decoded inherited bootstrap key.
++  // Returns:
++  //   None: The platform-backed secure clearing operation has completed.
++  ~AuthenticationKey() { crypto::SecureZeroBuffer(bytes); }
++};
++
++// Build a closed successful private authentication response.
++// Args:
++//   identifier: Validated request correlation identifier.
++//   result: Exact public challenge metadata and proof.
++// Returns:
++//   Value: An outer schema-version-one response.
++base::Value AuthenticationResponse(const std::string& identifier, base::DictValue result) {
++  base::DictValue response;
++  response.Set("schemaVersion", 1);
++  response.Set("requestId", identifier);
++  response.Set("ok", true);
++  response.Set("result", std::move(result));
++  return base::Value(std::move(response));
++}
++
++#if BUILDFLAG(IS_WIN)
++// KernelHandle
++// Release an owned Windows pipe, event, token, or process handle.
++class KernelHandle {
++ public:
++  // Take ownership of a valid Windows handle.
++  // Args:
++  //   handle: Handle obtained through a successful native creation call.
++  // Returns:
++  //   KernelHandle: A unique native handle owner.
++  explicit KernelHandle(HANDLE handle) : handle_(handle) {}
++  KernelHandle(const KernelHandle&) = delete;
++  KernelHandle& operator=(const KernelHandle&) = delete;
++  // Close the owned Windows handle.
++  // Args:
++  //   None: This object owns one native kernel reference.
++  // Returns:
++  //   None: The kernel resource is released.
++  ~KernelHandle() {
++    // Invalid handles carry no native ownership.
++    if (handle_ && handle_ != INVALID_HANDLE_VALUE) {
++      CloseHandle(handle_);
++    }
++  }
++  // Return the borrowed handle for one native call.
++  // Args:
++  //   None: Ownership remains in this object.
++  // Returns:
++  //   HANDLE: The borrowed native handle.
++  HANDLE get() const { return handle_; }
++ private:
++  HANDLE handle_;
++};
++
++// Wait for an overlapped pipe operation while respecting shutdown and a deadline.
++// Args:
++//   pipe: Owned overlapped pipe handle.
++//   operation: One pending Windows operation and its event.
++//   stopped: Browser lifecycle cancellation.
++//   deadline: Maximum pending operation duration.
++//   transferred: Number of transferred bytes on success.
++// Returns:
++//   bool: Whether the complete native operation succeeded.
++bool AwaitOperation(HANDLE pipe, OVERLAPPED* operation,
++                    std::atomic<bool>* stopped, std::chrono::milliseconds deadline,
++                    DWORD* transferred) {
++  const auto started = std::chrono::steady_clock::now();
++  // Poll the operation event without blocking browser shutdown.
++  while (!stopped->load(std::memory_order_acquire) &&
++         std::chrono::steady_clock::now() - started < deadline) {
++    const DWORD status = WaitForSingleObject(operation->hEvent, 50);
++    // A signaled event is resolved through the overlapped byte count.
++    if (status == WAIT_OBJECT_0) {
++      return GetOverlappedResult(pipe, operation, transferred, FALSE) != FALSE;
++    }
++    // Unexpected wait results invalidate the operation.
++    if (status != WAIT_TIMEOUT) {
++      break;
++    }
++  }
++  CancelIoEx(pipe, operation);
++  // Keep the stack OVERLAPPED alive until its cancellation is complete.
++  GetOverlappedResult(pipe, operation, transferred, TRUE);
++  return false;
++}
++
++// PipeChannel
++// Carry one current-user Windows named pipe connection with bounded operations.
++class PipeChannel {
++ public:
++  // Own one protected server pipe and its lifecycle flag.
++  // Args:
++  //   pipe: Created named pipe handle.
++  //   stopped: Browser lifecycle flag.
++  // Returns:
++  //   PipeChannel: A protected byte channel.
++  PipeChannel(HANDLE pipe, std::atomic<bool>* stopped)
++      : pipe_(pipe), stopped_(stopped) {}
++  // Accept only the controller PID selected in the inherited bootstrap.
++  // Args:
++  //   parent_pid: Trusted bootstrap controller process identifier.
++  // Returns:
++  //   bool: Whether the expected local controller connected.
++  bool Accept(int parent_pid) {
++    KernelHandle event(CreateEventW(nullptr, TRUE, FALSE, nullptr));
++    OVERLAPPED operation = {};
++    operation.hEvent = event.get();
++    DWORD transferred = 0;
++    const BOOL connected = ConnectNamedPipe(pipe_.get(), &operation);
++    const DWORD error = connected ? ERROR_SUCCESS : GetLastError();
++    // Overlapped acceptance handles both raced and pending connections.
++    if (error != ERROR_SUCCESS && error != ERROR_PIPE_CONNECTED &&
++        (error != ERROR_IO_PENDING ||
++         !AwaitOperation(pipe_.get(), &operation, stopped_,
++                         std::chrono::seconds(30), &transferred))) {
++      return false;
++    }
++    ULONG client_pid = 0;
++    return GetNamedPipeClientProcessId(pipe_.get(), &client_pid) &&
++           client_pid == static_cast<ULONG>(parent_pid);
++  }
++  // Read exactly one bounded byte range from the private controller.
++  // Args:
++  //   bytes: Destination range.
++  //   length: Required byte count.
++  //   deadline: Optional absolute private authentication deadline.
++  // Returns:
++  //   bool: Whether the whole range arrived before shutdown or a deadline.
++  bool Read(uint8_t* bytes, size_t length, OperationDeadline deadline = std::nullopt) {
++    return Transfer(bytes, length, false, deadline);
++  }
++  // Write exactly one bounded byte range to the private controller.
++  // Args:
++  //   bytes: Sanitized source range.
++  //   length: Required byte count.
++  //   deadline: Optional absolute private authentication deadline.
++  // Returns:
++  //   bool: Whether the whole range was transferred.
++  bool Write(const uint8_t* bytes, size_t length, OperationDeadline deadline = std::nullopt) {
++    return Transfer(const_cast<uint8_t*>(bytes), length, true, deadline);
++  }
++ private:
++  // Perform complete overlapped pipe reads or writes.
++  // Args:
++  //   bytes: Byte buffer for the requested direction.
++  //   length: Bounded buffer length.
++  //   writing: Whether to send the buffer.
++  //   deadline: Optional absolute deadline shared across the complete handshake frame.
++  // Returns:
++  //   bool: Complete byte transfer status.
++  bool Transfer(uint8_t* bytes, size_t length, bool writing, OperationDeadline deadline) {
++    size_t offset = 0;
++    // Split partial native operations while preserving the complete frame order.
++    while (offset < length && !stopped_->load(std::memory_order_acquire)) {
++      auto remaining = std::chrono::milliseconds(writing ? 5000 : 3600000);
++      // Authentication fragments share one absolute deadline rather than extending it per transfer.
++      if (deadline) {
++        const auto available = std::chrono::duration_cast<std::chrono::milliseconds>(
++            *deadline - std::chrono::steady_clock::now());
++        if (available <= std::chrono::milliseconds::zero()) { return false; }
++        remaining = std::min(remaining, available);
++      }
++      KernelHandle event(CreateEventW(nullptr, TRUE, FALSE, nullptr));
++      OVERLAPPED operation = {};
++      operation.hEvent = event.get();
++      DWORD transferred = 0;
++      const DWORD count = static_cast<DWORD>(length - offset);
++      const BOOL complete = writing
++          ? WriteFile(pipe_.get(), bytes + offset, count, &transferred, &operation)
++          : ReadFile(pipe_.get(), bytes + offset, count, &transferred, &operation);
++      // Pending reads remain interruptible while idle controllers keep the session open.
++      if (!complete && (GetLastError() != ERROR_IO_PENDING ||
++          !AwaitOperation(pipe_.get(), &operation, stopped_,
++                          remaining,
++                          &transferred))) {
++        return false;
++      }
++      // Zero-byte transfers identify EOF and avoid an infinite retry loop.
++      if (transferred == 0 || transferred > count) {
++        return false;
++      }
++      offset += transferred;
++    }
++    return offset == length;
++  }
++  KernelHandle pipe_;
++  std::atomic<bool>* stopped_;
++};
++
++// Create a named pipe with an explicit current-user SID access descriptor.
++// Args:
++//   bootstrap: Validated endpoint and controller authorization.
++//   stopped: Browser lifecycle flag.
++// Returns:
++//   unique_ptr<PipeChannel>: A private local channel or unavailable result.
++std::unique_ptr<PipeChannel> CreateChannel(const Bootstrap& bootstrap,
++                                          std::atomic<bool>* stopped) {
++  // Enforce the private observer namespace and reject arbitrary pipe paths.
++  constexpr std::string_view prefix = "\\\\.\\pipe\\abr-observer-";
++  if (!bootstrap.endpoint.starts_with(prefix) ||
++      !Identifier(std::string_view(bootstrap.endpoint).substr(prefix.size()))) {
++    return nullptr;
++  }
++  HANDLE token_raw = nullptr;
++  // Request only token identity information under the current browser token.
++  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token_raw)) {
++    return nullptr;
++  }
++  KernelHandle token(token_raw);
++  DWORD required = 0;
++  GetTokenInformation(token.get(), TokenUser, nullptr, 0, &required);
++  // Limit aligned token storage before reading the current SID.
++  if (required == 0 || required > 65536) {
++    return nullptr;
++  }
++  std::vector<uintptr_t> storage((required + sizeof(uintptr_t) - 1) /
++                                sizeof(uintptr_t));
++  if (!GetTokenInformation(token.get(), TokenUser, storage.data(), required,
++                           &required)) {
++    return nullptr;
++  }
++  LPWSTR sid_raw = nullptr;
++  if (!ConvertSidToStringSidW(
++          reinterpret_cast<TOKEN_USER*>(storage.data())->User.Sid, &sid_raw)) {
++    return nullptr;
++  }
++  std::wstring descriptor_text = L"D:P(A;;GA;;;";
++  descriptor_text += sid_raw;
++  descriptor_text += L")";
++  LocalFree(sid_raw);
++  PSECURITY_DESCRIPTOR descriptor = nullptr;
++  if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
++          descriptor_text.c_str(), SDDL_REVISION_1, &descriptor, nullptr)) {
++    return nullptr;
++  }
++  SECURITY_ATTRIBUTES attributes = {sizeof(SECURITY_ATTRIBUTES), descriptor, FALSE};
++  HANDLE pipe = CreateNamedPipeW(base::UTF8ToWide(bootstrap.endpoint).c_str(),
++      PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE,
++      PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
++      1, 65536, 65536, 0, &attributes);
++  LocalFree(descriptor);
++  // A occupied endpoint or rejected ACL fails closed.
++  if (pipe == INVALID_HANDLE_VALUE) {
++    return nullptr;
++  }
++  return std::make_unique<PipeChannel>(pipe, stopped);
++}
++#else
++// PipeChannel
++// Carry a current-user Unix-domain connection with bounded polling and ownership.
++class PipeChannel {
++ public:
++  // Own a protected listening socket and its temporary endpoint.
++  // Args:
++  //   socket: Listening Unix-domain socket.
++  //   endpoint: Owned socket filename.
++  //   stopped: Browser lifecycle flag.
++  // Returns:
++  //   PipeChannel: A private Unix byte channel.
++  PipeChannel(int socket, std::string endpoint, std::atomic<bool>* stopped)
++      : server_(socket), endpoint_(std::move(endpoint)), stopped_(stopped) {}
++  // Close owned sockets and remove only the created endpoint.
++  // Args:
++  //   None: This object owns its sockets and its endpoint.
++  // Returns:
++  //   None: Unix channel resources are released.
++  ~PipeChannel() {
++    if (client_ >= 0) { close(client_); }
++    close(server_);
++    unlink(endpoint_.c_str());
++  }
++  // Accept a current-user controller with the exact bootstrap PID.
++  // Args:
++  //   parent_pid: Launching controller PID.
++  // Returns:
++  //   bool: Whether peer credentials identify the authorized controller.
++  bool Accept(int parent_pid) {
++    const auto started = std::chrono::steady_clock::now();
++    // Poll connection availability so shutdown cancels acceptance.
++    while (!stopped_->load(std::memory_order_acquire) &&
++           std::chrono::steady_clock::now() - started < std::chrono::seconds(30)) {
++      pollfd wait = {server_, POLLIN, 0};
++      if (poll(&wait, 1, 50) <= 0) { continue; }
++      client_ = accept(server_, nullptr, nullptr);
++      if (client_ < 0) { return false; }
++#if BUILDFLAG(IS_MAC)
++      int suppress_signal = 1;
++      // A controller disconnect produces an IO failure instead of a browser SIGPIPE.
++      if (setsockopt(client_, SOL_SOCKET, SO_NOSIGPIPE, &suppress_signal, sizeof(suppress_signal)) != 0) { return false; }
++#endif
++#if BUILDFLAG(IS_LINUX)
++      ucred credentials = {};
++      socklen_t length = sizeof(credentials);
++      return getsockopt(client_, SOL_SOCKET, SO_PEERCRED, &credentials, &length) == 0 &&
++             credentials.uid == getuid() && credentials.pid == parent_pid;
++#elif BUILDFLAG(IS_MAC)
++      uid_t user = 0;
++      gid_t group = 0;
++      pid_t pid = 0;
++      socklen_t length = sizeof(pid);
++      return getpeereid(client_, &user, &group) == 0 && user == getuid() &&
++             getsockopt(client_, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0 &&
++             pid == parent_pid;
++#else
++      return false;
++#endif
++    }
++    return false;
++  }
++  // Read a complete bounded byte range from the controller.
++  // Args:
++  //   bytes: Destination bytes.
++  //   length: Required bounded range.
++  //   deadline: Optional absolute private authentication deadline.
++  // Returns:
++  //   bool: Complete byte-transfer status.
++  bool Read(uint8_t* bytes, size_t length, OperationDeadline deadline = std::nullopt) {
++    return Transfer(bytes, length, false, deadline);
++  }
++  // Write a complete bounded byte range to the controller.
++  // Args:
++  //   bytes: Sanitized bytes.
++  //   length: Required bounded range.
++  //   deadline: Optional absolute private authentication deadline.
++  // Returns:
++  //   bool: Complete byte-transfer status.
++  bool Write(const uint8_t* bytes, size_t length, OperationDeadline deadline = std::nullopt) {
++    return Transfer(const_cast<uint8_t*>(bytes), length, true, deadline);
++  }
++ private:
++  // Poll and transfer complete Unix byte ranges without unbounded shutdown waits.
++  // Args:
++  //   bytes: Byte buffer for the chosen direction.
++  //   length: Buffer byte count.
++  //   writing: Whether to send instead of receive.
++  //   deadline: Optional absolute deadline shared across the complete handshake frame.
++  // Returns:
++  //   bool: Complete transfer status.
++  bool Transfer(uint8_t* bytes, size_t length, bool writing, OperationDeadline deadline) {
++    const auto started = std::chrono::steady_clock::now();
++    size_t offset = 0;
++    // Preserve byte order across partial socket transfers.
++    while (offset < length && !stopped_->load(std::memory_order_acquire)) {
++      // Bound private challenge and confirmation reads by the complete connection deadline.
++      if (deadline && std::chrono::steady_clock::now() >= *deadline) { return false; }
++      if (writing && std::chrono::steady_clock::now() - started > std::chrono::seconds(5)) { return false; }
++      pollfd wait = {client_, static_cast<short>(writing ? POLLOUT : POLLIN), 0};
++      if (poll(&wait, 1, 50) <= 0) { continue; }
++      const ssize_t transferred = writing
++          ? send(client_, bytes + offset, length - offset,
++#if BUILDFLAG(IS_LINUX)
++                 MSG_NOSIGNAL)
++#else
++                 0)
++#endif
++          : recv(client_, bytes + offset, length - offset, 0);
++      if (transferred <= 0) { return false; }
++      offset += static_cast<size_t>(transferred);
++    }
++    return offset == length;
++  }
++  int server_;
++  int client_ = -1;
++  std::string endpoint_;
++  std::atomic<bool>* stopped_;
++};
++
++// Create an exclusive socket under a current-user 0700 runtime directory.
++// Args:
++//   bootstrap: Validated observer endpoint.
++//   stopped: Browser lifecycle flag.
++// Returns:
++//   unique_ptr<PipeChannel>: A private socket or unavailable result.
++std::unique_ptr<PipeChannel> CreateChannel(const Bootstrap& bootstrap,
++                                          std::atomic<bool>* stopped) {
++  const auto path = base::FilePath::FromUTF8Unsafe(bootstrap.endpoint);
++  struct stat parent = {};
++  // Reject shared runtime directories, path redirects, and reused endpoints.
++  if (!path.IsAbsolute() || bootstrap.endpoint.size() >= sizeof(sockaddr_un::sun_path) ||
++      lstat(path.DirName().value().c_str(), &parent) != 0 ||
++      !S_ISDIR(parent.st_mode) || parent.st_uid != getuid() ||
++      (parent.st_mode & 077) != 0 || base::PathExists(path)) {
++    return nullptr;
++  }
++  const int descriptor = socket(AF_UNIX, SOCK_STREAM, 0);
++  if (descriptor < 0) { return nullptr; }
++  sockaddr_un address = {};
++  address.sun_family = AF_UNIX;
++  std::memcpy(address.sun_path, bootstrap.endpoint.c_str(), bootstrap.endpoint.size() + 1);
++  // Bind once; cleanup removes only this newly created owned filename.
++  if (bind(descriptor, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0 ||
++      chmod(bootstrap.endpoint.c_str(), 0600) != 0 || listen(descriptor, 1) != 0) {
++    close(descriptor);
++    return nullptr;
++  }
++  return std::make_unique<PipeChannel>(descriptor, bootstrap.endpoint, stopped);
++}
++#endif
++
++// Read one private inherited bootstrap line with bounded shutdown polling.
++// Args:
++//   stopped: Browser lifecycle flag.
++// Returns:
++//   optional<string>: At most 4096 bytes from a private inherited pipe.
++std::optional<std::string> ReadBootstrap(std::atomic<bool>* stopped) {
++  std::string text;
++  const auto started = std::chrono::steady_clock::now();
++#if BUILDFLAG(IS_WIN)
++  HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
++  if (GetFileType(input) != FILE_TYPE_PIPE) { return std::nullopt; }
++#else
++  struct stat metadata = {};
++  // Node's private stdio pipe uses a Unix socketpair; both local stream types carry inherited bootstrap data.
++  if (fstat(STDIN_FILENO, &metadata) != 0 ||
++      (!S_ISFIFO(metadata.st_mode) && !S_ISSOCK(metadata.st_mode))) { return std::nullopt; }
++#endif
++  // Require a short complete bootstrap before starting any observation channel.
++  while (text.size() < kMaximumBootstrap && !stopped->load(std::memory_order_acquire) &&
++         std::chrono::steady_clock::now() - started < std::chrono::seconds(5)) {
++    char byte = 0;
++#if BUILDFLAG(IS_WIN)
++    DWORD available = 0;
++    if (!PeekNamedPipe(input, nullptr, 0, nullptr, &available, nullptr)) { return std::nullopt; }
++    if (available == 0) { std::this_thread::sleep_for(std::chrono::milliseconds(10)); continue; }
++    DWORD read = 0;
++    if (!ReadFile(input, &byte, 1, &read, nullptr) || read != 1) { return std::nullopt; }
++#else
++    pollfd wait = {STDIN_FILENO, POLLIN, 0};
++    if (poll(&wait, 1, 50) <= 0) { continue; }
++    if (read(STDIN_FILENO, &byte, 1) != 1) { return std::nullopt; }
++#endif
++    if (byte == '\n') { return text; }
++    text.push_back(byte);
++  }
++  return std::nullopt;
++}
++
++// Validate the inherited bootstrap and its isolated profile ownership marker.
++// Args:
++//   bytes: Private bounded bootstrap JSON.
++//   directory: Browser-selected isolated user data directory.
++// Returns:
++//   optional<Bootstrap>: Strict controller/profile authorization or unavailable result.
++std::optional<Bootstrap> ParseBootstrap(const std::string& bytes,
++                                        const base::FilePath& directory) {
++  auto dictionary = base::JSONReader::ReadDict(bytes, base::JSON_PARSE_RFC, 8);
++  if (!dictionary || dictionary->size() != 5 || dictionary->FindInt("schemaVersion") != 1) { return std::nullopt; }
++  const auto* secret = dictionary->FindString("secret");
++  const auto* endpoint = dictionary->FindString("endpoint");
++  const auto* profile = dictionary->FindString("profileId");
++  const auto pid = dictionary->FindInt("parentPid");
++  // Validate secret and endpoint bounds without emitting their values.
++  if (!secret || secret->size() != 64 || !endpoint || endpoint->empty() || endpoint->size() > 256 ||
++      endpoint->find('\0') != std::string::npos || !profile || !Identifier(*profile) || !pid || *pid <= 0 ||
++      !std::all_of(secret->begin(), secret->end(), [](char value) { return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f'); })) {
++    return std::nullopt;
++  }
++  std::string marker;
++  // Read only the fixed ownership marker under the selected isolated profile.
++  if (!directory.IsAbsolute() || base::IsLink(directory) ||
++      !base::ReadFileToStringWithMaxSize(directory.AppendASCII(".abr-profile.json"), &marker, 2048)) { return std::nullopt; }
++  auto ownership = base::JSONReader::ReadDict(marker, base::JSON_PARSE_RFC, 8);
++  if (!ownership || ownership->FindInt("schemaVersion") != 1 ||
++      !ownership->FindString("name") || *ownership->FindString("name") != *profile) { return std::nullopt; }
++  return Bootstrap{*secret, *endpoint, *profile, *pid};
++}
++
++// Write a single metadata-only bootstrap line through the inherited stdout pipe.
++// Args:
++//   bootstrap: Authorized profile and endpoint metadata.
++// Returns:
++//   bool: Whether startup metadata was fully written.
++bool Publish(const Bootstrap& bootstrap) {
++  base::DictValue metadata;
++  metadata.Set("schemaVersion", 1);
++  metadata.Set("protocolVersion", 1);
++  metadata.Set("authVersion", 2);
++  metadata.Set("endpoint", bootstrap.endpoint);
++  metadata.Set("profileId", bootstrap.profile_id);
++  metadata.Set("observerVersion", kObserverVersion);
++  metadata.Set("browserVersion", version_info::GetVersionNumber());
++  metadata.Set("browserCommit", kBrowserCommit);
++#if BUILDFLAG(IS_WIN)
++  metadata.Set("pid", static_cast<int>(GetCurrentProcessId()));
++#else
++  metadata.Set("pid", static_cast<int>(getpid()));
++#endif
++  auto text = Encode(base::Value(std::move(metadata)));
++  if (!text) { return false; }
++  text->push_back('\n');
++#if BUILDFLAG(IS_WIN)
++  DWORD written = 0;
++  return WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), text->data(),
++                   static_cast<DWORD>(text->size()), &written, nullptr) && written == text->size();
++#else
++  return write(STDOUT_FILENO, text->data(), text->size()) == static_cast<ssize_t>(text->size());
++#endif
++}
++
++// Read one complete length-prefixed UTF-8 JSON request from the private channel.
++// Args:
++//   channel: Authenticated-controller channel.
++//   deadline: Optional absolute deadline for an unauthenticated handshake.
++// Returns:
++//   optional<DictValue>: A strictly shaped request or an EOF/protocol failure.
++std::optional<base::DictValue> ReadRequest(PipeChannel* channel,
++                                         OperationDeadline deadline = std::nullopt) {
++  std::array<uint8_t, 4> header = {};
++  if (!channel->Read(header.data(), header.size(), deadline)) { return std::nullopt; }
++  const size_t length = (static_cast<size_t>(header[0]) << 24) |
++      (static_cast<size_t>(header[1]) << 16) | (static_cast<size_t>(header[2]) << 8) | header[3];
++  // Verify the frame length before allocating any peer-controlled storage.
++  if (length == 0 || length > kMaximumFrame) { return std::nullopt; }
++  std::string bytes(length, '\0');
++  if (!channel->Read(reinterpret_cast<uint8_t*>(bytes.data()), length, deadline)) { return std::nullopt; }
++  auto request = base::JSONReader::ReadDict(bytes, base::JSON_PARSE_RFC, 40);
++  if (!request || request->size() != 4 || request->FindInt("schemaVersion") != 1 ||
++      !request->FindString("requestId") || !Identifier(*request->FindString("requestId")) ||
++      !request->FindString("method") || request->FindString("method")->size() > 64 ||
++      !request->FindDict("params")) { return std::nullopt; }
++  return request;
++}
++
++// Write one sanitized result through the bounded frame protocol.
++// Args:
++//   channel: Private authenticated controller channel.
++//   response: Closed result or safe protocol error.
++//   deadline: Optional absolute private authentication deadline.
++// Returns:
++//   bool: Complete response transfer status.
++bool WriteResponse(PipeChannel* channel, const base::Value& response,
++                    OperationDeadline deadline = std::nullopt) {
++  auto bytes = Encode(response);
++  // Return an explicit quota error while preserving the authenticated connection.
++  if (!bytes && response.is_dict()) {
++    const auto* identifier = response.GetDict().FindString("requestId");
++    if (identifier) { bytes = Encode(ObserverFailure(*identifier, "INVALID_ARGUMENT", "The observation exceeds its protocol size limit")); }
++  }
++  if (!bytes) { return false; }
++  const uint32_t length = static_cast<uint32_t>(bytes->size());
++  const std::array<uint8_t, 4> header = {static_cast<uint8_t>(length >> 24),
++      static_cast<uint8_t>(length >> 16), static_cast<uint8_t>(length >> 8), static_cast<uint8_t>(length)};
++  return channel->Write(header.data(), header.size(), deadline) &&
++         channel->Write(reinterpret_cast<const uint8_t*>(bytes->data()), bytes->size(), deadline);
++}
++
++}  // namespace
++
++base::Value ObserverFailure(const std::string& request_id, const char* code,
++                            const char* message) {
++  base::DictValue error;
++  error.Set("code", code);
++  error.Set("message", message);
++  error.Set("retryable", false);
++  base::DictValue response;
++  response.Set("schemaVersion", 1);
++  response.Set("requestId", request_id);
++  response.Set("ok", false);
++  response.Set("error", std::move(error));
++  return base::Value(std::move(response));
++}
++
++void ServeObserver(base::FilePath user_directory, std::atomic<bool>* stopped,
++                   ObserverDispatch dispatch) {
++  auto text = ReadBootstrap(stopped);
++  if (!text) { return; }
++  auto bootstrap = ParseBootstrap(*text, user_directory);
++  std::fill(text->begin(), text->end(), '\0');
++  if (!bootstrap) { return; }
++  AuthenticationKey key;
++  const bool decoded = base::HexStringToSpan(bootstrap->secret, key.bytes);
++  // The key enters only through inherited stdin and stays absent from all request parameters.
++  crypto::SecureZeroBuffer(base::as_writable_byte_span(bootstrap->secret));
++  bootstrap->secret.clear();
++  if (!decoded) { return; }
++  auto channel = CreateChannel(*bootstrap, stopped);
++  if (!channel || !Publish(*bootstrap) || !channel->Accept(bootstrap->parent_pid)) { return; }
++  bool authenticated = false;
++  bool challenge_issued = false;
++  std::string client_nonce;
++  std::string server_nonce;
++#if BUILDFLAG(IS_WIN)
++  const uint32_t server_pid = GetCurrentProcessId();
++#else
++  const uint32_t server_pid = static_cast<uint32_t>(getpid());
++#endif
++  const auto authentication_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
++  // Keep one ordered request stream with one controller and one role-separated handshake.
++  while (!stopped->load(std::memory_order_acquire)) {
++    const OperationDeadline deadline = authenticated ? std::nullopt : OperationDeadline(authentication_deadline);
++    auto request = ReadRequest(channel.get(), deadline);
++    if (!request) { break; }
++    const std::string id = *request->FindString("requestId");
++    const auto& params = *request->FindDict("params");
++    const auto& method = *request->FindString("method");
++    // Prove server possession before requesting any client proof or allowing UI-thread observation.
++    if (!authenticated) {
++      if (std::chrono::steady_clock::now() >= authentication_deadline) { break; }
++      const auto* supplied_client_nonce = params.FindString("clientNonce");
++      if (!challenge_issued && method == "observer.challenge" && params.size() == 2 &&
++          params.FindInt("authVersion") == 2 && supplied_client_nonce && auth::LowerHex64(*supplied_client_nonce)) {
++        challenge_issued = true;
++        client_nonce = *supplied_client_nonce;
++        const auto nonce_bytes = crypto::RandBytesAsArray<32>();
++        server_nonce = base::HexEncodeLower(nonce_bytes);
++        const auto transcript = auth::Transcript("observer", "server", server_pid, client_nonce, server_nonce);
++        if (!transcript) { break; }
++        const auto proof = crypto::hmac::SignSha256(key.bytes, base::as_byte_span(*transcript));
++        base::DictValue result;
++        result.Set("authVersion", 2);
++        result.Set("serverPid", static_cast<double>(server_pid));
++        result.Set("clientNonce", client_nonce);
++        result.Set("serverNonce", server_nonce);
++        result.Set("serverProof", base::HexEncodeLower(proof));
++        if (!WriteResponse(channel.get(), AuthenticationResponse(id, std::move(result)), deadline)) { break; }
++        continue;
++      }
++      const auto* supplied_server_nonce = params.FindString("serverNonce");
++      const auto* supplied_proof = params.FindString("clientProof");
++      std::array<uint8_t, 32> proof = {};
++      const auto transcript = auth::Transcript("observer", "client", server_pid, client_nonce, server_nonce);
++      if (!challenge_issued || method != "observer.hello" || params.size() != 4 ||
++          params.FindInt("authVersion") != 2 || !supplied_client_nonce || !supplied_server_nonce ||
++          !supplied_proof || *supplied_client_nonce != client_nonce || *supplied_server_nonce != server_nonce ||
++          !auth::LowerHex64(*supplied_proof) || !base::HexStringToSpan(*supplied_proof, proof) ||
++          !transcript || !crypto::hmac::VerifySha256(key.bytes, base::as_byte_span(*transcript), proof) ||
++          std::chrono::steady_clock::now() >= authentication_deadline) {
++        WriteResponse(channel.get(), ObserverFailure(id, "POLICY_DENIED", "Observer authentication failed"), deadline);
++        break;
++      }
++      authenticated = true;
++      crypto::SecureZeroBuffer(key.bytes);
++    } else if (method == "observer.hello" || method == "observer.challenge") {
++      WriteResponse(channel.get(), ObserverFailure(id, "INVALID_ARGUMENT", "Observer handshake is already complete"));
++      break;
++    }
++    auto response = dispatch.Run(*bootstrap, std::move(*request));
++    if (!WriteResponse(channel.get(), response, deadline)) { break; }
++  }
++  // Private key ownership securely clears every remaining exit path.
++}
++
++}  // namespace abr
+diff --git a/chrome/browser/abr_native_observer/observer_transport.h b/chrome/browser/abr_native_observer/observer_transport.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..a80617d1051d59fd4bb2af68ffc234dc64002738
+--- /dev/null
++++ b/chrome/browser/abr_native_observer/observer_transport.h
+@@ -0,0 +1,55 @@
++// -*- coding: utf-8 -*-
++// observer_transport.h
++// Native observer authenticated transport
++// =====================
++// Define protected bootstrap data and a bounded browser-thread dispatch callback.
++
++#ifndef CHROME_BROWSER_ABR_NATIVE_OBSERVER_OBSERVER_TRANSPORT_H_
++#define CHROME_BROWSER_ABR_NATIVE_OBSERVER_OBSERVER_TRANSPORT_H_
++
++#include <atomic>
++#include <string>
++
++#include "base/files/file_path.h"
++#include "base/functional/callback.h"
++#include "base/values.h"
++
++namespace abr {
++
++// Bootstrap
++// Bind one private inherited bootstrap to its launching controller and profile.
++struct Bootstrap {
++  std::string secret;
++  std::string endpoint;
++  std::string profile_id;
++  int parent_pid = 0;
++};
++
++using ObserverDispatch =
++    base::RepeatingCallback<base::Value(const Bootstrap&, base::DictValue)>;
++
++// Construct a closed protocol error without including browser or bootstrap data.
++// Args:
++//   request_id: Opaque authenticated request correlation identifier.
++//   code: Stable runtime error identifier.
++//   message: Fixed technical failure description.
++// Returns:
++//   base::Value: The versioned IPC error response.
++base::Value ObserverFailure(const std::string& request_id,
++                            const char* code,
++                            const char* message);
++
++// Serve one authenticated controller through a current-user local channel.
++// Args:
++//   user_directory: Canonical isolated browser data directory.
++//   stopped: Browser lifecycle cancellation flag.
++//   dispatch: Browser UI-thread read-only request dispatcher.
++// Returns:
++//   None: The local endpoint and session secret are released when serving ends.
++void ServeObserver(base::FilePath user_directory,
++                   std::atomic<bool>* stopped,
++                   ObserverDispatch dispatch);
++
++}  // namespace abr
++
++#endif  // CHROME_BROWSER_ABR_NATIVE_OBSERVER_OBSERVER_TRANSPORT_H_
+diff --git a/chrome/browser/abr_native_observer/privacy_policy.h b/chrome/browser/abr_native_observer/privacy_policy.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ce83c6ed4b3dff86b98eedb5f3f8f4c663dc038
+--- /dev/null
++++ b/chrome/browser/abr_native_observer/privacy_policy.h
+@@ -0,0 +1,113 @@
++// -*- coding: utf-8 -*-
++// privacy_policy.h
++// Pure cached accessibility privacy rules
++// =====================
++// Classify bounded public field metadata before accessibility values reach IPC.
++
++#ifndef CHROME_BROWSER_ABR_NATIVE_OBSERVER_PRIVACY_POLICY_H_
++#define CHROME_BROWSER_ABR_NATIVE_OBSERVER_PRIVACY_POLICY_H_
++
++#include <cstddef>
++#include <string_view>
++
++namespace abr::privacy {
++
++// Fold one ASCII byte while preserving every other UTF-8 byte.
++// Args:
++//   value: One byte from bounded accessibility metadata.
++// Returns:
++//   unsigned char: The corresponding ASCII lowercase byte.
++constexpr unsigned char AsciiLower(unsigned char value) {
++  // ASCII folding preserves locale-independent protocol classification.
++  return value >= 'A' && value <= 'Z'
++      ? static_cast<unsigned char>(value + ('a' - 'A')) : value;
++}
++
++// Identify bytes that continue an ASCII identifier word.
++// Args:
++//   value: A neighboring UTF-8 byte.
++// Returns:
++//   bool: Whether the byte belongs to the ASCII letter, digit, or underscore set.
++constexpr bool AsciiWordByte(unsigned char value) {
++  const auto folded = AsciiLower(value);
++  return (folded >= 'a' && folded <= 'z') ||
++         (value >= '0' && value <= '9') || value == '_';
++}
++
++// Detect an independent Card word exclusively on eligible fields or labels.
++// Args:
++//   name: Cached accessibility name whose contents remain private to classification.
++//   field_or_label: Whether the cached role identifies an input or associated label.
++// Returns:
++//   bool: Whether the node requires Card field privacy filtering.
++constexpr bool SensitiveCardName(std::string_view name, bool field_or_label) {
++  // Document titles and generic container names preserve their public observation scope.
++  if (!field_or_label) { return false; }
++  // Scan word boundaries rather than matching unrelated words such as Cardboard.
++  for (std::size_t index = 0; index + 4 <= name.size(); ++index) {
++    if (AsciiLower(name[index]) != 'c' || AsciiLower(name[index + 1]) != 'a' ||
++        AsciiLower(name[index + 2]) != 'r' || AsciiLower(name[index + 3]) != 'd') {
++      continue;
++    }
++    if ((index != 0 && AsciiWordByte(name[index - 1])) ||
++        (index + 4 != name.size() && AsciiWordByte(name[index + 4]))) {
++      continue;
++    }
++    return true;
++  }
++  return false;
++}
++
++// Compare bounded ASCII metadata without allocating a normalized copy.
++// Args:
++//   first: Cached metadata token.
++//   second: Fixed policy token.
++// Returns:
++//   bool: Whether both tokens have the same ASCII-insensitive byte sequence.
++constexpr bool AsciiEqual(std::string_view first, std::string_view second) {
++  // Length differences identify different complete metadata tokens.
++  if (first.size() != second.size()) { return false; }
++  // Preserve non-ASCII bytes while comparing the complete token.
++  for (std::size_t index = 0; index < first.size(); ++index) {
++    if (AsciiLower(first[index]) != AsciiLower(second[index])) { return false; }
++  }
++  return true;
++}
++
++// Classify sensitive autocomplete semantics when HTML metadata is already cached.
++// Args:
++//   value: Existing cached HTML autocomplete attribute.
++// Returns:
++//   bool: Whether a complete token denotes card, password, or one-time-code data.
++constexpr bool SensitiveAutocomplete(std::string_view value) {
++  std::size_t offset = 0;
++  // HTML autocomplete supports section and address prefixes before its field token.
++  while (offset < value.size()) {
++    const auto start = value.find_first_not_of(" \t\r\n\f\v", offset);
++    if (start == std::string_view::npos) { break; }
++    const auto end = value.find_first_of(" \t\r\n\f\v", start);
++    const auto token = value.substr(start, end == std::string_view::npos ? end : end - start);
++    if ((token.size() >= 3 && AsciiLower(token[0]) == 'c' &&
++         AsciiLower(token[1]) == 'c' && token[2] == '-') ||
++        AsciiEqual(token, "current-password") || AsciiEqual(token, "new-password") ||
++        AsciiEqual(token, "one-time-code")) {
++      return true;
++    }
++    if (end == std::string_view::npos) { break; }
++    offset = end;
++  }
++  return false;
++}
++
++// Validate one trusted literal sensitive-name pattern before any cached tree traversal.
++// Args:
++//   pattern: A complete UTF-8 string from an authenticated request.
++// Returns:
++//   bool: Whether its nonempty byte count fits the fixed protocol policy.
++constexpr bool ValidSensitivePattern(std::string_view pattern) {
++  return !pattern.empty() && pattern.size() <= 256;
++}
++
++}  // namespace abr::privacy
++
++#endif  // CHROME_BROWSER_ABR_NATIVE_OBSERVER_PRIVACY_POLICY_H_
+diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
+index b2619baa8f61dfc4699a27f17e44fc4a94dd94f7..c52257d3ff8ab10d2e1936561599f399f63fa01a 100644
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -30,6 +30,8 @@
+ #include "build/branding_buildflags.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/active_use_util.h"
++#include "chrome/browser/abr_native_observer/observer.h"
++#include "chrome/browser/buildflags.h"
+ #include "chrome/browser/after_startup_task_utils.h"
+ #include "chrome/browser/browser_features.h"
+ #include "chrome/browser/browser_process.h"
+@@ -1723,6 +1725,10 @@ void ChromeBrowserMainParts::PreBrowserStart() {
+ }
+ 
+ void ChromeBrowserMainParts::PostBrowserStart() {
++#if BUILDFLAG(ENABLE_ABR_NATIVE_OBSERVER)
++  // Start scoped observation after browser windows and profiles are initialized.
++  abr::StartNativeObserver();
++#endif
+   TRACE_EVENT0("startup", "ChromeBrowserMainParts::PostBrowserStart");
+   for (auto& chrome_extra_part : chrome_extra_parts_) {
+     chrome_extra_part->PostBrowserStart();
+@@ -2225,6 +2231,10 @@ void ChromeBrowserMainParts::OnFirstIdle() {
+ }
+ 
+ void ChromeBrowserMainParts::PostMainMessageLoopRun() {
++#if BUILDFLAG(ENABLE_ABR_NATIVE_OBSERVER)
++  // Stop private IO before browser-owned profile and accessibility teardown.
++  abr::StopNativeObserver();
++#endif
+   TRACE_EVENT_END("toplevel", perfetto::Track::FromPointer(this));
+   TRACE_EVENT0("startup", "ChromeBrowserMainParts::PostMainMessageLoopRun");
+ #if BUILDFLAG(IS_ANDROID)
+-- 
+2.39.1.windows.1

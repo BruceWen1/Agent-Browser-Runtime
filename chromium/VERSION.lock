@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "upstreamTag": "156.0.8078.12",
+  "upstreamCommit": "634b046faf2137b83af71c87baf362b533af9104",
+  "upstreamRepository": "https://chromium.googlesource.com/chromium/src.git",
+  "upstreamMirror": "https://github.com/chromium/chromium.git",
+  "releaseMetadataOrigin": "https://chromiumdash.appspot.com",
+  "verification": {
+    "tag": "verified-official-mirror",
+    "tagVerifiedAt": "2026-10-10",
+    "googleSourceTransport": "verified-official-tag",
+    "deps": "verified-official-mirror-metadata"
+  },
+  "depsSha256": "b4de748ba5abac43952bdc0945795d9c3a07238d18b37ae0f82231669f68fc94",
+  "depotToolsRepository": "https://chromium.googlesource.com/chromium/tools/depot_tools.git",
+  "depotToolsCommit": "a03dfbf7f2d1cefa2795d81d59ca4f16c8616a8f",
+  "playwrightVersion": "1.64.0",
+  "playwrightCompatibility": "pending-same-build-smoke",
+  "patchsetVersion": "0.1.0",
+  "patches": [
+    {
+      "file": "patches/0001-readonly-observer.patch",
+      "sha256": "88d988d3012bff214b1f01826cfe42f608d7c813d49ac661fc70f3a4ea0a74f4",
+      "scope": "browser-readonly",
+      "allowedPaths": [
+        "chrome/browser/abr_native_observer/",
+        "chrome/browser/chrome_browser_main.cc",
+        "chrome/browser/BUILD.gn"
+      ],
+      "validationEvidence": [
+        "locked-upstream-git-index-apply-check",
+        "mailbox-diff-whitespace-check"
+      ],
+      "compilation": "pending-full-browser-build-and-physical-handshake"
+    }
+  ],
+  "targets": ["windows-x64", "macos-arm64", "linux-x64"],
+  "buildArguments": [
+    "is_debug=false",
+    "is_component_build=false",
+    "symbol_level=0",
+    "use_remoteexec=false"
+  ],
+  "patchedBuildArguments": ["abr_native_observer=true"],
+  "requirements": {
+    "minimumMemoryGiB": 8,
+    "minimumFreeDiskGiB": 100,
+    "windows": {
+      "minimumVisualStudio": "18.0.0",
+      "requiredComponent": "Microsoft.VisualStudio.Component.VC.ATLMFC",
+      "minimumWindowsSdk": "10.0.28000.2270",
+      "minimumDebugTools": "10.0.26100.3323"
+    }
+  }
+}

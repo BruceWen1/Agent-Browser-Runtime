@@ -7,7 +7,14 @@
  */
 import { performance } from 'node:perf_hooks';
 
-import { BrowserError, normalizeError, validate } from '@abr/contracts';
+import {
+  BrowserError,
+  normalizeError,
+  snapshotSchema,
+  validate,
+  validateOutput,
+} from '@abr/contracts';
+import type { BrowserSnapshot } from '@abr/contracts';
 
 import { PlaywrightBackend } from './backend.js';
 import type { WorkerConfiguration } from './backend.js';
@@ -47,10 +54,18 @@ async function dispatch(request: Request): Promise<unknown> {
       return backend.capabilities(id);
     case 'observe':
       return backend.observe(id);
+    case 'inspectionSnapshot':
+      return backend.inspectionSnapshot(id);
     case 'currentUrl':
       return backend.currentUrl(id);
     case 'execute':
-      return backend.execute(params);
+      if (
+        !params.input ||
+        Object.keys(params).some((key) => !['input', 'inspection'].includes(key))
+      )
+        throw new BrowserError('INVALID_ARGUMENT', 'Worker execution metadata is invalid.');
+      if (params.inspection) validateOutput(snapshotSchema, params.inspection);
+      return backend.execute(params.input, params.inspection as BrowserSnapshot | undefined);
     case 'screenshot':
       return backend.screenshot(id);
     case 'artifactChunk':

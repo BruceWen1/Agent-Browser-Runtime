@@ -6,3 +6,4 @@
  * Identify the package during initial workspace compilation.
  */
 export * from './engine.js';
+export * from './browser-metadata.js';

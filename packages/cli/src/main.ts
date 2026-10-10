@@ -63,6 +63,32 @@ function browserCandidates() {
 }
 
 /**
+ * Parse closed command options with a stable public input error.
+ * Args:
+ *   argv (string[]): Local command arguments.
+ * Returns:
+ *   object: Parsed options and positional command words.
+ */
+function parseCommand(argv: string[]) {
+  // Keep option parser diagnostics inside the stable runtime error contract.
+  try {
+    return parseArgs({
+      args: argv,
+      allowPositionals: true,
+      strict: true,
+      options: {
+        config: { type: 'string' },
+        json: { type: 'boolean' },
+        stdio: { type: 'boolean' },
+        help: { type: 'boolean', short: 'h' },
+      },
+    });
+  } catch {
+    throw new BrowserError('INVALID_ARGUMENT', 'Command arguments are invalid.');
+  }
+}
+
+/**
  * Dispatch a local runtime command and record key step duration.
  * Args:
  *   argv (string[]): Command arguments supplied by the local user.
@@ -71,17 +97,7 @@ function browserCandidates() {
  */
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   const started = performance.now();
-  const parsed = parseArgs({
-    args: argv,
-    allowPositionals: true,
-    strict: true,
-    options: {
-      config: { type: 'string' },
-      json: { type: 'boolean' },
-      stdio: { type: 'boolean' },
-      help: { type: 'boolean', short: 'h' },
-    },
-  });
+  const parsed = parseCommand(argv);
   const command = parsed.positionals.join(' ');
   const configFile = path.resolve(parsed.values.config ?? path.join('.abr', 'config.yaml'));
   // Display concise command documentation when no command is requested.
@@ -163,6 +179,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
           logger.info(event);
         },
         async dispose() {
+          application.closeReviewUi();
           await artifacts.close();
           logger.info({ event: 'mcp-stopped', durationMs: performance.now() - started });
         },
@@ -181,6 +198,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       );
   } finally {
     if (!(command === 'mcp serve' && parsed.values.stdio)) {
+      application.closeReviewUi();
       await runtime.closeAll();
       await artifacts.close();
       logger.info({ event: 'command-finished', durationMs: performance.now() - started });

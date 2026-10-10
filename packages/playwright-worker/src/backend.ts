@@ -7,10 +7,17 @@
  */
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 
 import { ArtifactStore } from '@abr/artifacts';
 import type { RedactionRectangle } from '@abr/artifacts';
-import { BrowserError, CAPABILITIES, parseAction, parseSession } from '@abr/contracts';
+import {
+  BrowserError,
+  CAPABILITIES,
+  parseAction,
+  parseSession,
+  validateCoordinateInspection,
+} from '@abr/contracts';
 import type {
   ActionResult,
   AxNode,
@@ -22,6 +29,8 @@ import type {
 } from '@abr/contracts';
 import { chromium } from 'playwright';
 import type { BrowserContext, Locator, Page } from 'playwright';
+
+import { IndependentInspection } from './inspection.js';
 
 interface RawNode {
   role?: string;
@@ -63,6 +72,7 @@ const SUPPORTED: Capability[] = [
 /** PlaywrightBackend owns official browser contexts within one supervised worker. */
 export class PlaywrightBackend {
   private readonly sessions = new Map<string, PageState>();
+  private readonly inspections = new Map<string, IndependentInspection>();
   readonly artifacts: ArtifactStore;
 
   /**
@@ -283,6 +293,79 @@ export class PlaywrightBackend {
   }
 
   /**
+   * Read independent policy geometry while preserving caller snapshot and ARIA locator references.
+   * Args:
+   *   id (string): Owned browser session identifier.
+   * Returns:
+   *   Promise<BrowserSnapshot>: Complete independent CSS inspection context.
+   */
+  async inspectionSnapshot(id: string): Promise<BrowserSnapshot> {
+    const state = this.state(id);
+    const tabs = [...state.tabs.entries()].filter((entry) => entry[1] === state.page);
+    if (tabs.length !== 1)
+      throw new BrowserError(
+        'TARGET_STALE',
+        'Inspection requires one retained active tab identity.',
+      );
+    let inspector = this.inspections.get(id);
+    // Replacement pages receive a separate readonly channel without altering caller references.
+    if (inspector && inspector.page !== state.page) {
+      await inspector.close();
+      this.inspections.delete(id);
+      inspector = undefined;
+    }
+    if (!inspector) {
+      inspector = new IndependentInspection(state.context, state.page);
+      this.inspections.set(id, inspector);
+    }
+    return inspector.read(id, tabs[0]![0]);
+  }
+
+  /**
+   * Revalidate coordinate semantics immediately before dispatching pointer input.
+   * Args:
+   *   input (ActionRequest): Authorized operation with any coordinate endpoints.
+   *   inspection (BrowserSnapshot | undefined): Private policy witness supplied by the core.
+   * Returns:
+   *   Promise<void>: Completion of current semantic witness validation.
+   */
+  private async validateInspection(
+    input: ReturnType<typeof parseAction>,
+    inspection?: BrowserSnapshot,
+  ): Promise<void> {
+    const targets = [
+      input.target,
+      ...(input.action === 'drag'
+        ? [input.args?.source as Target, input.args?.destination as Target]
+        : []),
+    ];
+    if (!targets.some((target) => target?.kind === 'coordinate')) return;
+    if (!inspection)
+      throw new BrowserError(
+        'PERMISSION_REQUIRED',
+        'Coordinate input requires a private semantic inspection.',
+      );
+    const current = await this.inspectionSnapshot(input.sessionId);
+    validateCoordinateInspection(input, inspection, current);
+  }
+
+  /**
+   * Read current geometry for a retained caller AX reference or verified CSS coordinate.
+   * Args:
+   *   state (PageState): Caller snapshot and official browser reference state.
+   *   target (Target): One validated drag endpoint.
+   * Returns:
+   *   Promise<object>: Current CSS viewport point for the existing endpoint identity.
+   */
+  private async dragPoint(state: PageState, target: Target): Promise<{ x: number; y: number }> {
+    if (target.kind === 'coordinate') return this.point(state, target);
+    const box = await this.locator(state, target).boundingBox();
+    if (!box || box.width <= 0 || box.height <= 0)
+      throw new BrowserError('TARGET_NOT_FOUND', 'Drag reference has no current visible bounds.');
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  }
+
+  /**
    * Resolve an accessibility reference to an official Playwright locator.
    * Args:
    *   state (PageState): Current session reference map.
@@ -381,21 +464,27 @@ export class PlaywrightBackend {
    * Execute one compatible operation using the official Playwright implementation.
    * Args:
    *   value (unknown): Strict action request.
+   *   inspection (BrowserSnapshot | undefined): Independent internal semantic authorization witness.
    * Returns:
    *   Promise<ActionResult>: Actual execution path and post-action snapshot identifier.
    */
-  async execute(value: unknown): Promise<ActionResult> {
+  async execute(value: unknown, inspection?: BrowserSnapshot): Promise<ActionResult> {
     const input = parseAction(value);
     const state = this.state(input.sessionId);
     if (state.paused) throw new BrowserError('DESKTOP_BUSY', 'Browser input is paused.');
     const startedAt = new Date().toISOString();
     const cancellation = new AbortController();
+    const deadline = performance.now() + (input.timeoutMs ?? 10000);
     state.cancellation = cancellation;
     const options = { signal: cancellation.signal, timeout: input.timeoutMs ?? 10000 };
     let actualStrategy: ActionResult['actualStrategy'];
     let executionPath: ActionResult['executionPath'] = 'playwright-cdp';
     // Execute each declared operation under the selected browser context.
     try {
+      await this.validateInspection(input, inspection);
+      cancellation.signal.throwIfAborted();
+      if (state.paused || performance.now() >= deadline)
+        throw new BrowserError('TIMEOUT', 'Pointer authorization exceeded its action deadline.');
       switch (input.action) {
         case 'navigate': {
           // Retry only navigation transport failures and retain an explicit upper bound.
@@ -472,12 +561,43 @@ export class PlaywrightBackend {
           );
           break;
         }
-        case 'drag':
-          await this.locator(state, input.args?.source as Target).dragTo(
-            this.locator(state, input.args?.destination as Target),
-            options,
-          );
+        case 'drag': {
+          const source = input.args?.source as Target;
+          const destination = input.args?.destination as Target;
+          if (source.kind === 'ax-node' && destination.kind === 'ax-node') {
+            await this.locator(state, source).dragTo(this.locator(state, destination), options);
+            break;
+          }
+          const from = await this.dragPoint(state, source);
+          const to = await this.dragPoint(state, destination);
+          await this.validateInspection(input, inspection);
+          cancellation.signal.throwIfAborted();
+          if (performance.now() >= deadline)
+            throw new BrowserError('TIMEOUT', 'Drag authorization exceeded its action deadline.');
+          await state.page.mouse.move(from.x, from.y);
+          await state.page.mouse.down();
+          // Release the held button even when the bounded destination revalidation fails.
+          try {
+            await state.page.mouse.move(to.x, to.y, { steps: 8 });
+            if (destination.kind === 'coordinate')
+              await this.validateInspection(
+                { ...input, action: 'pointer-move', target: destination },
+                inspection,
+              );
+            cancellation.signal.throwIfAborted();
+            if (state.paused || performance.now() >= deadline)
+              throw new BrowserError(
+                'TIMEOUT',
+                'Drag destination authorization exceeded its deadline.',
+              );
+          } catch (error) {
+            await state.page.keyboard.press('Escape').catch(() => undefined);
+            throw error;
+          } finally {
+            await state.page.mouse.up();
+          }
           break;
+        }
         case 'switch-tab': {
           const page = state.tabs.get(String(input.args?.tabId));
           if (!page || page.isClosed())
@@ -613,6 +733,8 @@ export class PlaywrightBackend {
     const state = this.sessions.get(id);
     if (!state) return;
     state.cancellation?.abort();
+    await this.inspections.get(id)?.close();
+    this.inspections.delete(id);
     await state.context.close();
     this.sessions.delete(id);
   }

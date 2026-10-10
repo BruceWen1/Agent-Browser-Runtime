@@ -23,6 +23,19 @@ const PAGE = `<!doctype html><html lang="en"><meta charset="utf-8"><title>ABR fi
  */
 function activate() { const counter = document.getElementById('counter'); counter.textContent = String(Number(counter.textContent) + 1); }
 document.getElementById('activate').addEventListener('click', activate);
+/**
+ * Report event semantics from the public fixture input for native-path diagnostics.
+ * Args:
+ *   event (Event): Actual browser input event on the public Query control.
+ * Returns:
+ *   Promise<void>: Completion of the owned loopback diagnostic submission.
+ */
+async function reportInput(event) {
+ const record = {type:event.type,code:event.code === 'Space' ? 'Space' : 'other',space:event.data === ' ',composing:Boolean(event.isComposing),trusted:event.isTrusted,inputType:event.inputType || ''};
+ // Retry only diagnostic transport without repeating browser input.
+ for(let attempt=0;attempt<3;attempt++) { try { const response=await fetch('/input-evidence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(record)}); if(response.ok) return; } catch {} }
+}
+for(const type of ['keydown','keyup','beforeinput','input','compositionstart','compositionend']) document.getElementById('query').addEventListener(type,reportInput);
 </script></html>`;
 
 /**
@@ -55,7 +68,36 @@ function respond(request: IncomingMessage, response: ServerResponse): void {
  *   Promise<object>: Local origin and asynchronous cleanup function.
  */
 export async function startFixture() {
-  const server = createServer(respond);
+  const evidence: Record<string, unknown>[] = [];
+  // Collect bounded diagnostics solely from the explicitly owned public fixture input.
+  const server = createServer((request, response) => {
+    if (request.method === 'POST' && request.url === '/input-evidence') {
+      let body = '';
+      request.on('data', (chunk: Buffer) => {
+        body += chunk.toString('utf8');
+        if (body.length > 4096) request.destroy();
+      });
+      request.on('end', () => {
+        try {
+          const record = JSON.parse(body) as Record<string, unknown>;
+          if (
+            evidence.length < 512 &&
+            Object.keys(record).every((key) =>
+              ['type', 'code', 'space', 'composing', 'trusted', 'inputType'].includes(key),
+            )
+          )
+            evidence.push(record);
+          response.writeHead(204);
+          response.end();
+        } catch {
+          response.writeHead(400);
+          response.end();
+        }
+      });
+      return;
+    }
+    respond(request, response);
+  });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', resolve);
@@ -64,6 +106,16 @@ export async function startFixture() {
   if (!address || typeof address === 'string') throw new Error('Fixture listener has no port.');
   return {
     url: `http://127.0.0.1:${address.port}/`,
+    /**
+     * Read copied public-input event diagnostics.
+     * Args:
+     *   None.
+     * Returns:
+     *   object[]: Bounded diagnostic samples containing no submitted text.
+     */
+    inputEvidence() {
+      return structuredClone(evidence);
+    },
     /**
      * Close the controlled loopback listener.
      * Args:

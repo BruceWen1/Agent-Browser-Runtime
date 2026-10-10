@@ -274,6 +274,19 @@ export class CompatibleEngine implements BrowserEngine {
   }
 
   /**
+   * Read fresh private policy geometry independently of the caller ARIA snapshot.
+   * Args:
+   *   id (string): Owned browser session identifier.
+   * Returns:
+   *   Promise<BrowserSnapshot>: Independent readonly semantic inspection.
+   */
+  async inspectionSnapshot(id: string): Promise<BrowserSnapshot> {
+    return (await (
+      await this.worker()
+    ).call('inspectionSnapshot', { sessionId: id })) as BrowserSnapshot;
+  }
+
+  /**
    * Read the current URL for immediate origin authorization.
    * Args:
    *   id (string): Browser session identifier.
@@ -288,13 +301,18 @@ export class CompatibleEngine implements BrowserEngine {
    * Dispatch one strict operation to the official browser worker.
    * Args:
    *   input (ActionRequest): Validated authorized operation.
+   *   inspection (BrowserSnapshot | undefined): Private coordinate semantic witness.
    * Returns:
    *   Promise<ActionResult>: Actual compatible execution result.
    */
-  async execute(input: ActionRequest): Promise<ActionResult> {
+  async execute(input: ActionRequest, inspection?: BrowserSnapshot): Promise<ActionResult> {
     return (await (
       await this.worker()
-    ).call('execute', input, (input.timeoutMs ?? 10000) + 10000)) as ActionResult;
+    ).call(
+      'execute',
+      { input, ...(inspection ? { inspection } : {}) },
+      (input.timeoutMs ?? 10000) + 10000,
+    )) as ActionResult;
   }
 
   /**

@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { CAPABILITIES } from '@abr/contracts';
+import { CAPABILITIES, validateCoordinateInspection } from '@abr/contracts';
 import type {
   ActionRequest,
   ActionResult,
@@ -79,6 +79,17 @@ export class StubEngine implements BrowserEngine {
   }
 
   /**
+   * Read independent stub inspection while preserving caller reference IDs.
+   * Args:
+   *   sessionId (string): Owned test session identifier.
+   * Returns:
+   *   Promise<BrowserSnapshot>: Fresh test metadata with no adapter cache mutation.
+   */
+  async inspectionSnapshot(sessionId: string): Promise<BrowserSnapshot> {
+    return this.observe(sessionId);
+  }
+
+  /**
    * Return the current trusted browser URL for authorization tests.
    * Args:
    *   None.
@@ -104,10 +115,17 @@ export class StubEngine implements BrowserEngine {
    * Count executions and optionally hold an operation open.
    * Args:
    *   input (ActionRequest): Validated coordinator input.
+   *   inspection (BrowserSnapshot | undefined): Independent coordinate authorization witness.
    * Returns:
    *   Promise<ActionResult>: Successful adapter response after the gate opens.
    */
-  async execute(input: ActionRequest): Promise<ActionResult> {
+  async execute(input: ActionRequest, inspection?: BrowserSnapshot): Promise<ActionResult> {
+    if (inspection)
+      validateCoordinateInspection(
+        input,
+        inspection,
+        await this.inspectionSnapshot(input.sessionId),
+      );
     this.executed++;
     // Keep the operation active when a test supplies a controllable gate.
     if (this.block) await this.block;

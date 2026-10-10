@@ -14,6 +14,8 @@ import {
   MCP_TOOLS,
   actionResultSchema,
   capabilityReportSchema,
+  coordinateReferences,
+  coordinateTargets,
   normalizeError,
   parseAction,
   parseBrowserSession,
@@ -31,6 +33,7 @@ import type {
   CapabilityReport,
   CreateSessionRequest,
   ExecutionPath,
+  Target,
 } from '@abr/contracts';
 
 import type { EngineRegistry } from './registry.js';
@@ -39,11 +42,22 @@ import { filterSnapshot } from './privacy.js';
 export interface RuntimeGuard {
   prepareSession(input: CreateSessionRequest): Promise<CreateSessionRequest>;
   authorize(input: ActionRequest, url: string, target?: AxNode): Promise<void>;
+  authorizeTargets?(
+    input: ActionRequest,
+    url: string,
+    context: SemanticAuthorizationContext,
+  ): Promise<void>;
   created?(session: BrowserSession, input: CreateSessionRequest): Promise<void>;
   closed?(session: BrowserSession): Promise<void>;
   failed?(input: CreateSessionRequest): Promise<void>;
   approvalState?(input: ActionRequest): 'pending' | 'approved' | 'denied' | 'expired' | undefined;
   authorizeRead?(sessionId: string, url: string): void;
+}
+export interface SemanticAuthorizationContext {
+  source: BrowserSnapshot['source'];
+  windowId: string;
+  tabId?: string;
+  targets: AxNode[];
 }
 export interface AuditEvent {
   event: string;
@@ -58,6 +72,7 @@ export interface RuntimeOptions {
   actionTimeoutMs?: number;
   maxRequestsPerSession?: number;
   audit?: (event: AuditEvent) => void;
+  onCreated?: (session: BrowserSession) => Promise<void>;
 }
 interface RequestRecord {
   digest: string;
@@ -70,6 +85,7 @@ interface SessionRecord {
   requests: Map<string, RequestRecord>;
   active?: Promise<ActionResult>;
   closing?: Promise<void>;
+  initializing: boolean;
 }
 
 /**
@@ -118,6 +134,24 @@ function findNode(root: AxNode, nodeId: string): AxNode | undefined {
   return undefined;
 }
 
+/**
+ * Find the deepest focused interaction control for semantic keyboard authorization.
+ * Args:
+ *   root (AxNode): Privacy-filtered observed subtree.
+ * Returns:
+ *   AxNode | undefined: Focused control when a semantic target is available.
+ */
+function focusedControl(root: AxNode): AxNode | undefined {
+  // Prefer focused descendants over container-level focus metadata.
+  for (const child of root.children ?? []) {
+    const focused = focusedControl(child);
+    if (focused) return focused;
+  }
+  if (root.states.includes('focused') && !['window', 'document', 'group'].includes(root.role))
+    return root;
+  return undefined;
+}
+
 /** Runtime coordinates browser adapters under an explicitly supplied authorization guard. */
 export class Runtime {
   private readonly sessions = new Map<string, SessionRecord>();
@@ -126,6 +160,7 @@ export class Runtime {
   private readonly timeoutMs: number;
   private readonly maxRequests: number;
   private readonly audit: (event: AuditEvent) => void;
+  private readonly onCreated: RuntimeOptions['onCreated'];
 
   /**
    * Initialize session coordination with mandatory authorization.
@@ -146,6 +181,7 @@ export class Runtime {
     this.timeoutMs = options.actionTimeoutMs ?? 10_000;
     this.maxRequests = options.maxRequestsPerSession ?? 4096;
     this.audit = options.audit ?? (() => undefined);
+    this.onCreated = options.onCreated;
   }
 
   /**
@@ -157,9 +193,11 @@ export class Runtime {
    *   Promise<BrowserSession>: Validated isolated session metadata.
    */
   async create(value: unknown): Promise<BrowserSession> {
-    const input = parseSession(value);
+    const input = structuredClone(parseSession(value));
     const engine = this.registry.get(input.engine);
-    const live = this.list().filter((session) => session.status !== 'closed').length;
+    const live = [...this.sessions.values()].filter(
+      (record) => !record.initializing && record.session.status !== 'closed',
+    ).length;
     // Reserve capacity before performing asynchronous authorization or startup.
     if (live + this.creating >= this.maxSessions)
       throw new BrowserError('DESKTOP_BUSY', 'Session capacity is exhausted.');
@@ -182,24 +220,37 @@ export class Runtime {
       }
       await this.guard.created?.(session, prepared);
       this.sessions.set(session.id, {
-        session: structuredClone(session),
+        session: { ...structuredClone(session), status: 'creating' },
         engine,
         requests: new Map(),
+        initializing: true,
       });
+      await this.onCreated?.(structuredClone(session));
+      const ready = this.sessions.get(session.id)!;
+      ready.initializing = false;
+      // Expose input readiness after trusted local controls complete initialization.
+      if (ready.session.status === 'creating') ready.session.status = 'ready';
       this.audit({
         event: 'session-created',
         sessionId: session.id,
         engine: session.engine,
         durationMs: performance.now() - started,
       });
-      return structuredClone(session);
+      return structuredClone(ready.session);
     } catch (error) {
       // Close newly allocated adapter state when its identifier is available.
-      if (created?.id && !this.sessions.has(created.id))
-        await engine.close(created.id).catch(() => undefined);
-      if (prepared) await this.guard.failed?.(prepared);
+      if (created?.id && this.sessions.has(created.id))
+        await this.close(created.id).catch(() => undefined);
+      else {
+        if (created?.id) await engine.close(created.id).catch(() => undefined);
+        if (prepared) await this.guard.failed?.(prepared);
+      }
       throw normalizeError(error);
     } finally {
+      if (created?.id) {
+        const record = this.sessions.get(created.id);
+        if (record) record.initializing = false;
+      }
       this.creating--;
     }
   }
@@ -261,7 +312,17 @@ export class Runtime {
   async observe(id: string): Promise<BrowserSnapshot> {
     const record = this.record(id);
     this.guard.authorizeRead?.(id, await record.engine.currentUrl(id));
-    const observed = await record.engine.observe(id);
+    const referenceObservation =
+      record.session.status === 'ready' || record.session.status === 'paused';
+    // Busy reads preserve adapter caller caches as well as the Core reference cache.
+    if (!referenceObservation && !record.engine.inspectionSnapshot)
+      throw new BrowserError(
+        'UNSUPPORTED_CAPABILITY',
+        'Independent busy-session observation is unavailable.',
+      );
+    const observed = referenceObservation
+      ? await record.engine.observe(id)
+      : await record.engine.inspectionSnapshot!(id);
     validateOutput(snapshotSchema, observed);
     const snapshot = filterSnapshot(observed);
     // Enforce session ownership and schema invariants on observed data.
@@ -269,7 +330,10 @@ export class Runtime {
     if (snapshot.sessionId !== id)
       throw new BrowserError('INTERNAL_ERROR', 'Snapshot belongs to a different session.');
     // Only idle snapshots become input references; busy observations remain read-only.
-    if (record.session.status === 'ready' || record.session.status === 'paused')
+    if (
+      referenceObservation &&
+      (record.session.status === 'ready' || record.session.status === 'paused')
+    )
       record.snapshot = structuredClone(snapshot);
     return structuredClone(snapshot);
   }
@@ -297,7 +361,7 @@ export class Runtime {
    *   Promise<ActionResult>: Cached or newly executed action result.
    */
   async execute(value: unknown): Promise<ActionResult> {
-    const input = parseAction(value);
+    const input = structuredClone(parseAction(value));
     const record = this.record(input.sessionId);
     const digest = createHash('sha256').update(canonical(input)).digest('hex');
     const existing = record.requests.get(input.requestId);
@@ -373,19 +437,27 @@ export class Runtime {
         throw new BrowserError('UNSUPPORTED_CAPABILITY', 'Action capability is unavailable.');
       if (input.args?.strategy === 'ime' && !report.supported.includes('input.ime'))
         throw new BrowserError('UNSUPPORTED_CAPABILITY', 'IME composition is unavailable.');
-      let target: AxNode | undefined;
-      // Resolve accessibility targets against the snapshot handed to the caller.
-      if (input.target?.kind === 'ax-node') {
-        if (record.snapshot?.snapshotId !== input.target.snapshotId)
+      const targets: AxNode[] = [];
+      const references = [
+        input.target,
+        ...(input.action === 'drag'
+          ? [input.args?.source as Target, input.args?.destination as Target]
+          : []),
+      ];
+      // Validate every drag endpoint and direct target against the caller's snapshot.
+      for (const reference of references) {
+        if (reference?.kind !== 'ax-node') continue;
+        if (record.snapshot?.snapshotId !== reference.snapshotId)
           throw new BrowserError(
             'TARGET_STALE',
             'A new observation is required.',
             true,
             'browser_observe',
           );
-        target = findNode(record.snapshot.root, input.target.nodeId);
+        const target = findNode(record.snapshot.root, reference.nodeId);
         if (!target)
           throw new BrowserError('TARGET_NOT_FOUND', 'Target does not exist in the snapshot.');
+        targets.push(target);
       }
       if (input.expectedSnapshotId && input.expectedSnapshotId !== record.snapshot?.snapshotId)
         throw new BrowserError(
@@ -395,10 +467,67 @@ export class Runtime {
           'browser_observe',
         );
       const url = await record.engine.currentUrl(input.sessionId);
+      // Confirm origin authorization before reading private current semantic context.
+      this.guard.authorizeRead?.(input.sessionId, url);
+      let inspection: BrowserSnapshot | undefined;
+      let semanticSnapshot = record.snapshot;
+      const coordinates = coordinateReferences(input);
+      // Inspect coordinates independently so mixed drag AX endpoints retain the caller's original cache.
+      if (coordinates.length > 0) {
+        if (!record.engine.inspectionSnapshot)
+          throw new BrowserError(
+            'UNSUPPORTED_CAPABILITY',
+            'Coordinate semantic inspection is unavailable.',
+          );
+        const observed = await record.engine.inspectionSnapshot(input.sessionId);
+        validateOutput(snapshotSchema, observed);
+        inspection = filterSnapshot(observed);
+        if (inspection.sessionId !== input.sessionId || inspection.url !== url)
+          throw new BrowserError('TARGET_STALE', 'Coordinate inspection page identity changed.');
+        semanticSnapshot = inspection;
+        for (const coordinate of coordinates)
+          targets.push(...coordinateTargets(inspection, coordinate));
+      }
+      // Bind text submission and activation keys to the current focused semantic control.
+      if (
+        input.action === 'type-text' ||
+        (input.action === 'key-press' &&
+          ['Enter', 'Return', 'Space', ' '].includes(String(input.args?.key)))
+      ) {
+        const observed = record.engine.inspectionSnapshot
+          ? await record.engine.inspectionSnapshot(input.sessionId)
+          : await record.engine.observe(input.sessionId);
+        validateOutput(snapshotSchema, observed);
+        if (observed.sessionId !== input.sessionId)
+          throw new BrowserError(
+            'INTERNAL_ERROR',
+            'Focused observation belongs to another session.',
+          );
+        semanticSnapshot = filterSnapshot(observed);
+        const focused = focusedControl(semanticSnapshot.root);
+        if (focused) targets.push(focused);
+      }
       // Apply authorization to current browser state immediately before execution.
-      await this.guard.authorize(input, url, target);
+      if (semanticSnapshot && this.guard.authorizeTargets) {
+        await this.guard.authorizeTargets(input, url, {
+          source: semanticSnapshot.source,
+          windowId: semanticSnapshot.windowId,
+          ...(semanticSnapshot.tabId ? { tabId: semanticSnapshot.tabId } : {}),
+          targets,
+        });
+      } else {
+        if (targets.length === 0) await this.guard.authorize(input, url);
+        for (const target of targets) await this.guard.authorize(input, url, target);
+      }
+      if ((await record.engine.currentUrl(input.sessionId)) !== url)
+        throw new BrowserError(
+          'TARGET_STALE',
+          'Browser location changed during authorization.',
+          true,
+          'browser_observe',
+        );
       executionPath = record.engine.kind === 'compatible' ? 'playwright-cdp' : 'os-input';
-      const operation = record.engine.execute(input);
+      const operation = record.engine.execute(input, inspection);
       record.active = operation;
       // Retain ownership until the real adapter operation settles after a timeout.
       void operation
@@ -419,6 +548,12 @@ export class Runtime {
       validateOutput(actionResultSchema, result);
       if (result.sessionId !== input.sessionId || result.requestId !== input.requestId)
         throw new BrowserError('INTERNAL_ERROR', 'Adapter result has inconsistent ownership.');
+      // Recheck completed browser state after navigation or page-triggered transitions.
+      if (result.status === 'succeeded')
+        this.guard.authorizeRead?.(
+          input.sessionId,
+          await record.engine.currentUrl(input.sessionId),
+        );
       this.audit({
         event: 'action-finished',
         sessionId: input.sessionId,
@@ -506,14 +641,27 @@ export class Runtime {
     record.closing = (async () => {
       // Classify cleanup failure while retaining metadata for a retry.
       try {
-        await record.engine.cancel?.(id);
+        await record.engine.cancel?.(id).catch((error: unknown) => {
+          // Continue resource release after a disconnected cancellation backend.
+          this.audit({
+            event: 'session-cancel-failed',
+            sessionId: id,
+            code: normalizeError(error).code,
+          });
+        });
         await record.engine.close(id);
         await this.guard.closed?.(record.session);
         record.session.status = 'closed';
+        record.requests.clear();
         delete record.snapshot;
         this.audit({ event: 'session-closed', sessionId: id });
       } catch (error) {
         record.session.status = 'failed';
+        this.audit({
+          event: 'session-close-failed',
+          sessionId: id,
+          code: normalizeError(error).code,
+        });
         throw normalizeError(error);
       } finally {
         delete record.closing;

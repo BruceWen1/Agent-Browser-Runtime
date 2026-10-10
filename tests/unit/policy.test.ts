@@ -241,3 +241,43 @@ test('profile allocation requires ownership and exclusive access', verifyProfile
 test('upload authorization rejects escaped and redirected files', verifyUploads);
 test('approved operations resume once under their original identity', verifyConsent);
 test('denied operations remain cancelled and never reach the adapter', verifyDeniedConsent);
+
+/**
+ * Verify activation keys require approval when the focused control is sensitive.
+ * Args:
+ *   None.
+ * Returns:
+ *   Promise<void>: Completion of focused-control authorization assertions.
+ */
+async function verifyFocusedConsent(): Promise<void> {
+  const { root, runtime, engine } = await setup();
+  try {
+    const session = await runtime.create(input);
+    const snapshot = await engine.observe(session.id);
+    /**
+     * Expose a focused sensitive fixture button through the read-only test adapter.
+     * Args:
+     *   sessionId (string): Owned test session.
+     * Returns:
+     *   Promise<BrowserSnapshot>: Current focused sensitive control snapshot.
+     */
+    engine.observe = async (sessionId) => ({
+      ...snapshot,
+      sessionId,
+      root: { nodeId: 'delete', role: 'button', name: 'Delete message', states: ['focused'] },
+    });
+    const result = await runtime.execute({
+      requestId: 'focused-delete',
+      sessionId: session.id,
+      action: 'key-press',
+      args: { key: 'Enter' },
+    });
+    expect(result.status).toBe('approval-required');
+    expect(engine.executed).toBe(0);
+  } finally {
+    await runtime.closeAll();
+    await cleanup(root);
+  }
+}
+
+test('focused sensitive buttons gate keyboard activation before input', verifyFocusedConsent);

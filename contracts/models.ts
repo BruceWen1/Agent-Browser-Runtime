@@ -75,7 +75,12 @@ export const snapshotSchema = z.strictObject({
   url: z.string().optional(),
   tabs: z
     .array(
-      z.strictObject({ id: z.string(), title: z.string(), url: z.string(), active: z.boolean() }),
+      z.strictObject({
+        id: z.string(),
+        title: z.string(),
+        url: z.string().optional(),
+        active: z.boolean(),
+      }),
     )
     .optional(),
   geometry: z
@@ -83,6 +88,7 @@ export const snapshotSchema = z.strictObject({
       windowOrigin: point,
       viewportOrigin: point,
       monitorScale: z.number().positive(),
+      viewportMetricsVerified: z.boolean().optional(),
     })
     .optional(),
 });

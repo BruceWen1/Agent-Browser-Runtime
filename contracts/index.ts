@@ -9,3 +9,4 @@ export * from './browser-api.js';
 export * from './errors.js';
 export * from './validation.js';
 export * from './models.js';
+export * from './inspection.js';

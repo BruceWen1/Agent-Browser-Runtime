@@ -1,8 +1,12 @@
 // -*- coding: utf-8 -*-
 /**
  * index.ts
- * test-fixtures package entry point
+ * Owned event parity fixtures and report API
  * =====================
- * Identify the package during initial workspace compilation.
+ * Export local fixtures, trace comparison, and explicit baseline review operations.
  */
-export const PACKAGE_NAME = '@abr/test-fixtures';
+export * from './baseline.js';
+export * from './comparator.js';
+export * from './report.js';
+export * from './server.js';
+export * from './trace.js';

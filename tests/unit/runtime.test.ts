@@ -7,6 +7,7 @@
  */
 import { BrowserError } from '@abr/contracts';
 import { EngineRegistry, Runtime } from '@abr/core';
+import type { RuntimeOptions } from '@abr/core';
 import { expect, test } from 'vitest';
 
 import { StubEngine, UnitGuard } from '../helpers/stub-engine.js';
@@ -20,16 +21,21 @@ const configuration = {
 /**
  * Construct a coordinator with explicit test adapters and authorization.
  * Args:
- *   None.
+ *   options (RuntimeOptions): Optional lifecycle hooks for controlled failures.
  * Returns:
  *   object: Runtime and controllable adapter instances.
  */
-function setup() {
+function setup(options: RuntimeOptions = {}) {
   const registry = new EngineRegistry();
   const engine = new StubEngine();
   const guard = new UnitGuard();
   registry.register(engine);
-  return { runtime: new Runtime(registry, guard, { maxSessions: 1 }), engine, guard, registry };
+  return {
+    runtime: new Runtime(registry, guard, { maxSessions: 1, ...options }),
+    engine,
+    guard,
+    registry,
+  };
 }
 
 /**
@@ -153,3 +159,32 @@ test('request retries execute once and changed payloads are rejected', verifyIde
 test('session creation capacity and close ownership are stable', verifyLifecycle);
 test('paused sessions and expired snapshots reject input', verifyReferences);
 test('racing requests preserve the active authorization owner', verifyOwnership);
+
+/**
+ * Verify failed trusted UI startup closes the already allocated browser session.
+ * Args:
+ *   None.
+ * Returns:
+ *   Promise<void>: Completion of post-startup resource release assertions.
+ */
+async function verifyControlFailure(): Promise<void> {
+  const { runtime, engine } = setup({
+    /**
+     * Simulate an unavailable independent trusted control provider.
+     * Args:
+     *   None.
+     * Returns:
+     *   Promise<never>: Classified startup failure.
+     */
+    async onCreated() {
+      throw new BrowserError('PERMISSION_REQUIRED', 'Trusted local controls are unavailable.');
+    },
+  });
+  await expect(runtime.create(configuration)).rejects.toMatchObject({
+    code: 'PERMISSION_REQUIRED',
+  });
+  expect(engine.closed).toBe(1);
+  expect(runtime.list()[0]?.status).toBe('closed');
+}
+
+test('failed trusted control startup releases allocated browser resources', verifyControlFailure);

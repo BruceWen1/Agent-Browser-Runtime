@@ -67,13 +67,14 @@ export interface BrowserSnapshot {
     windowOrigin: { x: number; y: number };
     viewportOrigin: { x: number; y: number };
     monitorScale: number;
+    viewportMetricsVerified?: boolean;
   };
 }
 
 export interface BrowserTab {
   id: string;
   title: string;
-  url: string;
+  url?: string;
   active: boolean;
 }
 export type Target =
@@ -129,9 +130,17 @@ export interface BrowserEngine {
   create(input: CreateSessionRequest): Promise<BrowserSession>;
   capabilities(sessionId: string): Promise<CapabilityReport>;
   observe(sessionId: string): Promise<BrowserSnapshot>;
+  /**
+   * Inspect current semantic geometry while preserving every caller observation reference.
+   * Args:
+   *   sessionId (string): Owned browser session identifier.
+   * Returns:
+   *   Promise<BrowserSnapshot>: Independent read-only authorization context.
+   */
+  inspectionSnapshot?(sessionId: string): Promise<BrowserSnapshot>;
   currentUrl(sessionId: string): Promise<string>;
   screenshot(sessionId: string): Promise<{ mimeType: 'image/png'; blobId: string }>;
-  execute(input: ActionRequest): Promise<ActionResult>;
+  execute(input: ActionRequest, inspection?: BrowserSnapshot): Promise<ActionResult>;
   pause(sessionId: string): Promise<void>;
   resume(sessionId: string): Promise<void>;
   close(sessionId: string): Promise<void>;

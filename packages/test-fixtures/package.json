@@ -7,9 +7,21 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
     }
   },
   "scripts": {
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "fixture": "node dist/main.js serve",
+    "parity": "node dist/main.js"
+  },
+  "dependencies": {
+    "@abr/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "playwright": "1.64.0"
   }
 }

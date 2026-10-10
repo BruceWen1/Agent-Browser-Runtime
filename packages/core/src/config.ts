@@ -34,6 +34,7 @@ export const configurationSchema = z.strictObject({
     requireForeground: z.literal(true),
     desktopInputConcurrency: z.literal(1),
     allowScriptFallback: z.literal(false),
+    agentExecutable: z.string().optional(),
   }),
   policy: z.strictObject({
     allowedOrigins: z.array(z.string()),
@@ -43,6 +44,7 @@ export const configurationSchema = z.strictObject({
     sensitiveTargetPatterns: z.array(z.string()).default([]),
   }),
   privacy: z.strictObject({
+    sensitivePatterns: z.array(z.string().min(1).max(256)).max(64).default([]),
     redactSensitiveText: z.literal(true),
     persistScreenshots: z.boolean(),
     logUrlQuery: z.literal(false),

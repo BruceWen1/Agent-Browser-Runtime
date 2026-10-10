@@ -8,3 +8,9 @@
 - Contract changes：Worker 使用共享 IPC 信封，保留官方浏览器 API 语义。
 - ADR references：worker 与 Core 分离、默认独立 Profile。
 - Next task：TASK-010 Compatible 与运行时的集成验收。
+
+独立语义检查增量采用官方 CDPSession 的 Accessibility、DOM 和 Page 只读接口。AX node ID、DOM border quad、CSS viewport 与实际两轴 pixel ratio/zoom 来自浏览器协议；before/after FrameTree、URL 和 layout 必须保持一致。inspection 保留 caller snapshotId、locator map 和 injected ARIA reference cache。坐标支持已验证的单 frame、axis-aligned、正常 visual viewport CSS 范围；其他空间或不完整几何提供明确状态。
+
+execute 接收私有 inspection witness，复核坐标语义后通过原官方输入路径执行。mixed drag 的 AX endpoint 使用原 caller locator，coordinate endpoint 使用独立 CSS 几何；目标在 drop 前再次确认，异常释放鼠标并取消拖动状态。公共 action envelope 保持严格字段。
+
+6 个 browser-free unit 场景验证独立缓存、只读 CDP metrics、geometry/frames 失败边界、privacy、预输入语义漂移和 mixed drag 释放。main-world evaluate、page title 与 ARIA snapshot 在这些 doubles 中显式拒绝调用。TypeScript 与所属 lint/format 通过；完整非桌面检查共 53 项通过。实际浏览器的该增量检查及 GUI parity 保留独立执行状态。
