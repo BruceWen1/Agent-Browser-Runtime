@@ -546,6 +546,7 @@ export async function packageDevelopment(options = {}) {
     );
     const createdAt = new Date().toISOString();
     const sbom = await createSbom(workspace, app, {
+      payloadRoot: payload,
       version: source.version,
       nodeVersion: source.nodeVersion,
       nodeSha256: await fileSha256(process.execPath),

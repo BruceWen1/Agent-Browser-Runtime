@@ -5,7 +5,7 @@
 | 范围 | 实现与验证 | 当前验收范围 |
 | --- | --- | --- |
 | TASK-001 至 008 | 工程、闭合契约、会话、策略、Fake 测试适配器、MCP、产物和 CLI | 真实 stdio 与 Inspector 21 工具目录已验证 |
-| TASK-009 至 010 | 官方 Playwright 1.64.0 原样集成，Chrome for Testing 156.0.8078.4 | Windows 两项 headed Compatible E2E 已通过 |
+| TASK-009 至 010 | 官方 Playwright 1.64.0 原样集成，Chrome for Testing 156.0.8078.4 | Windows 两项 headed Compatible E2E 已通过；独立 CDP、引用缓存与坐标审批的实际 headless 回归通过 |
 | TASK-011 | 4 MiB 分帧、继承启动密钥、双向 HMAC v2、当前用户 IPC、并发关联和断线取消 | Windows Rust/Node 真实认证 IPC 已通过；替换端点拒绝已验证；Unix 权限实机待验收 |
 | TASK-012 | Windows UIA、WGC、SendInput、原子导航、IME 策略、原始进程句柄关闭 | 单屏当前 DPI 的 GUI 主流程已通过；125% DPI、多屏、手工 IME、文件选择验收待执行 |
 | TASK-013 至 014 | macOS AX/Quartz/SCK、Linux AT-SPI/X11/XTest/XInput2 | Linux Rust 跨目标检查通过；macOS Rust 检查通过，Swift/系统链接和两平台实机待验收 |

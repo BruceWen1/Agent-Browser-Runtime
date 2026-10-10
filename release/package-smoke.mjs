@@ -59,6 +59,55 @@ export async function smokePackage(options) {
         (await fileSha256(inside(active.directory, agent.executable))) !== agent.binarySha256)
     )
       throw new ReleaseError('PACKAGE_SMOKE_FAILED', 'DesktopAgent portable identity is invalid.');
+    const sbom = JSON.parse(await readFile(path.join(active.directory, 'sbom.cdx.json'), 'utf8'));
+    const auxiliaryInventory = [];
+    // Verify each distributed helper has one SBOM identity tied to actual binary and license members.
+    for (const asset of active.manifest.components.playwright.browser?.auxiliary ?? []) {
+      // Select the auxiliary component types covered by explicit license evidence.
+      if (!['ffmpeg', 'winldd'].includes(asset.name)) continue;
+      const matches = sbom.components.filter(
+        (component) =>
+          component['bom-ref'] === `abr:playwright-auxiliary:${asset.name}:${asset.revision}`,
+      );
+      // Reject missing or duplicated component identities before resolving their inventory references.
+      if (matches.length !== 1)
+        throw new ReleaseError(
+          'PACKAGE_SMOKE_FAILED',
+          'Auxiliary SBOM identity is absent or ambiguous.',
+        );
+      const component = matches[0];
+      const properties = Object.fromEntries(
+        component.properties.map((item) => [item.name, item.value]),
+      );
+      const binary = active.manifest.files.find(
+        (file) => file.path === properties['abr:inventoryPath'],
+      );
+      const license = active.manifest.files.find(
+        (file) => file.path === properties['abr:licenseInventoryPath'],
+      );
+      // Link the component to the correct auxiliary directory, executable hash, and license hash.
+      if (
+        !binary ||
+        !license ||
+        !binary.path.startsWith(`browsers/${asset.directory}/`) ||
+        properties['abr:playwrightRevision'] !== asset.revision ||
+        component.scope !== 'required' ||
+        component.hashes[0]?.alg !== 'SHA-256' ||
+        component.hashes[0].content !== binary.sha256 ||
+        properties['abr:licenseSha256'] !== license.sha256 ||
+        (asset.name === 'winldd' && Object.hasOwn(component, 'version'))
+      )
+        throw new ReleaseError(
+          'PACKAGE_SMOKE_FAILED',
+          'Auxiliary SBOM differs from actual inventory.',
+        );
+      auxiliaryInventory.push({
+        name: asset.name,
+        revision: asset.revision,
+        binarySha256: binary.sha256,
+        licenses: component.licenses,
+      });
+    }
     const executable = path.join(
       active.directory,
       'runtime',
@@ -132,6 +181,7 @@ export async function smokePackage(options) {
         nativeCommit: native.upstreamCommit,
         desktopAgentSha256: agent.binarySha256,
         browser: active.manifest.components.playwright.browser,
+        auxiliarySbom: auxiliaryInventory,
         sourceSha256: active.manifest.source.codeSha256,
       },
       repeatedLaunchStable: true,

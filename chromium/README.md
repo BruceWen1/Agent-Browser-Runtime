@@ -39,7 +39,7 @@ node chromium/build/pipeline.mjs build --checkout-root "$env:ABR_CHROMIUM_ROOT" 
 
 原版和补丁构建分别使用 `out/ABROriginal` 与 `out/ABRPatched`。GN 参数写入 `args.gn`，现有输出目录仅复用完全相同的配置。补丁构建显式启用 `abr_native_observer=true`。原版 HEAD 要求等于 upstream commit；补丁 HEAD 要求与已验证应用 receipt 相等，并具有相同 upstream ancestry 和 DEPS。
 
-显式 preflight、fresh checkout 和 adopt 保留初始 100 GiB 准备门槛。首次 original build 使用该值作为完整工作区规划基数 W；S 为含隐藏 `.git` 和 deps 的 active source storage，排除根目录整个 `out`；O 为已有 original output。所需剩余空间为 `max(20, W - S - O + 20)` GiB。Windows 计量显式包含 Hidden 项、逐级排除根 `out`、拒绝 reparse；计量范围限制在同一 owned root 和 filesystem，单次期限 120 秒。S 达到 W 时预算保持 unresolved。记录使用 `estimate-unverified` 和 `capacityVerified=false`，用于有界阶段 admission。
+显式 preflight、fresh checkout 和 adopt 保留初始 100 GiB 准备门槛。首次 original build 使用该值作为完整工作区规划基数 W；S 为含隐藏 `.git` 和 deps 的 active source storage，排除根目录整个 `out`；O 为已有 original output。所需剩余空间为 `max(20, W - S - O + 20)` GiB。Windows 计量显式包含 Hidden 项并逐级排除根 `out`；scope 根目录及其祖先保持普通目录约束，内部链接采用 opaque 条目，目标和链接存储量均从扣减估计排除。计量范围限制在同一 owned root 和 filesystem，单次期限 120 秒。S 达到 W 时预算保持 unresolved。记录使用 `estimate-unverified` 和 `capacityVerified=false`，用于有界阶段 admission。
 
 完成的原版 manifest 记录完整本地输出存储量，后续相同 source/DEPS/toolchain/GN/platform 的小范围补丁构建使用 `max(20, original * 1.25 + 20 - existingPatched)`。精确匹配的原版测量缺失时 patched budget 保持 unresolved。预算包括对象、库、生成文件、符号与链接产物；当前锁定 Windows symbol_level=0 仍生成链接 PDB。源同步/hooks/build 每 5 秒实际查询磁盘可用空间，低于 20 GiB 只终止本阶段 owned 子进程树。原版和补丁的完整输出保留独立、可核验的生命周期。
 

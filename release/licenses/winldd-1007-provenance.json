@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "component": "winldd",
+  "buildNumber": 1007,
+  "repository": "https://github.com/microsoft/playwright",
+  "sourceCommit": "606ecd8b34bac100db32561b6278ffd76e5eb3cd",
+  "sources": [
+    {
+      "path": "browser_patches/winldd/PrintDeps.cpp",
+      "uri": "https://raw.githubusercontent.com/microsoft/playwright/606ecd8b34bac100db32561b6278ffd76e5eb3cd/browser_patches/winldd/PrintDeps.cpp",
+      "sha256": "c1521493a6ef81c53dcd19dc5a9e845ec07d9c395acc49678a512c50f0586260",
+      "size": 4841
+    },
+    {
+      "path": "browser_patches/winldd/BUILD_NUMBER",
+      "uri": "https://raw.githubusercontent.com/microsoft/playwright/606ecd8b34bac100db32561b6278ffd76e5eb3cd/browser_patches/winldd/BUILD_NUMBER",
+      "sha256": "7e3b7c72086e2735a656c73b95093d5803cd16d195079a6315b5ad89102c4388",
+      "size": 5
+    },
+    {
+      "path": "LICENSE",
+      "uri": "https://raw.githubusercontent.com/microsoft/playwright/606ecd8b34bac100db32561b6278ffd76e5eb3cd/LICENSE",
+      "sha256": "45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb",
+      "size": 11601
+    }
+  ],
+  "licenseExpression": "MIT AND Apache-2.0",
+  "copyrightNotices": [
+    "Copyright (c) 2020 Julien Waechter",
+    "Copyright Microsoft Corporation. All rights reserved."
+  ],
+  "licenseFile": {
+    "filename": "winldd-1007-LICENSE.txt",
+    "sha256": "729a0ff2b78d279866b073c7f4fb7421d14b80aeb541be99da792a963bec52a9",
+    "size": 13274
+  },
+  "binaryBuildAttestation": null
+}
