@@ -129,9 +129,11 @@ export interface BrowserEngine {
   create(input: CreateSessionRequest): Promise<BrowserSession>;
   capabilities(sessionId: string): Promise<CapabilityReport>;
   observe(sessionId: string): Promise<BrowserSnapshot>;
+  currentUrl(sessionId: string): Promise<string>;
   screenshot(sessionId: string): Promise<{ mimeType: 'image/png'; blobId: string }>;
   execute(input: ActionRequest): Promise<ActionResult>;
   pause(sessionId: string): Promise<void>;
   resume(sessionId: string): Promise<void>;
   close(sessionId: string): Promise<void>;
+  cancel?(sessionId: string): Promise<void>;
 }

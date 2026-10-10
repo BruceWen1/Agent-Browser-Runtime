@@ -5,4 +5,5 @@
  * =====================
  * Identify the package during initial workspace compilation.
  */
-export const PACKAGE_NAME = '@abr/core';
+export * from './registry.js';
+export * from './runtime.js';
