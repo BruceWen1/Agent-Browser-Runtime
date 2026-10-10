@@ -42,6 +42,7 @@ export interface RuntimeGuard {
   closed?(session: BrowserSession): Promise<void>;
   failed?(input: CreateSessionRequest): Promise<void>;
   approvalState?(input: ActionRequest): 'pending' | 'approved' | 'denied' | 'expired' | undefined;
+  authorizeRead?(sessionId: string, url: string): void;
 }
 export interface AuditEvent {
   event: string;
@@ -258,6 +259,7 @@ export class Runtime {
    */
   async observe(id: string): Promise<BrowserSnapshot> {
     const record = this.record(id);
+    this.guard.authorizeRead?.(id, await record.engine.currentUrl(id));
     const snapshot = await record.engine.observe(id);
     // Enforce session ownership and schema invariants on observed data.
     validateOutput(snapshotSchema, snapshot);
@@ -278,7 +280,9 @@ export class Runtime {
    *   Promise<object>: MIME type and controlled artifact identifier.
    */
   async screenshot(id: string): Promise<{ mimeType: 'image/png'; blobId: string }> {
-    return this.record(id).engine.screenshot(id);
+    const record = this.record(id);
+    this.guard.authorizeRead?.(id, await record.engine.currentUrl(id));
+    return record.engine.screenshot(id);
   }
 
   /**

@@ -307,6 +307,19 @@ export class PolicyEngine implements RuntimeGuard {
   }
 
   /**
+   * Authorize observation of current browser state.
+   * Args:
+   *   sessionId (string): Session owning the observed browser.
+   *   url (string): Current trusted browser URL.
+   * Returns:
+   *   void: Completion of read authorization.
+   */
+  authorizeRead(sessionId: string, url: string): void {
+    // Blank startup pages contain only the runtime-owned initial browser surface.
+    if (url !== 'about:blank') this.checkUrl(sessionId, url);
+  }
+
+  /**
    * Validate upload paths after resolving filesystem redirects.
    * Args:
    *   filename (string): File path explicitly requested for upload.

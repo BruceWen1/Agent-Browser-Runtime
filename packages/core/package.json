@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./testing": {
+      "types": "./dist/fake-engine.d.ts",
+      "default": "./dist/fake-engine.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
