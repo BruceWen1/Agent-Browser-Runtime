@@ -35,6 +35,6 @@ Windows 原生窗口映射使用当前浏览器 PID 的 HWND。viewport 采用�
 
 Windows 官方工具链预检、精确 DEPS 同步及原版 GN 生成已完成。补丁版 GN 生成、完整 Chromium C++ 编译、真实浏览器观察协议调用，以及原版和定制版事件回归保留独立验收状态。当前完整浏览器编译状态与真实 Native 隐私 fixture 验收状态均为待验证。
 
-`observer.cc` 的独立语法检查复用原版 GN 的 `//chrome/browser:core` 编译参数、官方 clang-cl 和真实生成头，overlay 内容校验与仓库源码一致。2026-10-10 本次检查返回 exit 1，36.549 秒，唯一诊断为 `content/public/common/extra_mojo_js_features.mojom.h` 尚未生成；对应实际目标为 `//content/public/common:interfaces__generator`。检查状态为 waiting-generated-header，Observer API 兼容性判断等待真实生成头及后续编译结果。
+`observer.cc` 的独立语法检查复用原版 GN 的 `//chrome/browser:core` 编译参数、官方 clang-cl 和真实生成头，overlay 内容校验与仓库源码一致。首次检查等待 `content/public/common/extra_mojo_js_features.mojom.h`。随后在独立 audit overlay 中执行两个官方生成目标 `//content/public/common:interfaces__generator` 和 `//content/public/common:interfaces_shared__generator`，使用 7 个真实模块、IDL、模板、typemap 与既有生成参数，仅重定向生成目录，两项均 exit 0。最终 `/Zs` 检查 exit 0，19.134 秒，诊断为 0 bytes；5 个编译副本与仓库文件 SHA256 一致。生产源码与原版 out 保持原有内容。该结果验证生产 Observer 的头文件及 API 语法兼容，完整浏览器编译链接及物理验证保持独立状态。
 
 macOS 和 Linux 传输代码、窗口原生映射与实体桌面验证保留独立状态。订阅型事件推送当前通过 `subscriptions=false` 表示 unavailable。

@@ -14,12 +14,12 @@
 | TASK-018 至 019 | 23 个自有 fixture、真实事件记录、严格比较、候选基线与人工审核 | 7 项 fixture/parity 测试通过；人工轨迹基线保持待审核 |
 | TASK-020 | Windows 独立审批进程、Pause/Resume/Stop 控制窗口与定向前台授权 | 协议/编译测试通过；实际按钮、热键和其他平台 UI 待人工验收 |
 | TASK-021 | 完整上游 SHA、DEPS、depot_tools、工具链、恢复/同步/补丁/构建管线 | Windows 工具链、156 个 Git scope、89 项 CIPD、同步和 hooks 通过；原版 GN 通过，本地编译进行中 |
-| TASK-022 至 023 | 浏览器层只读 C++ Bridge、可回放 patch、版本认证与 Native OS 输入适配器 | Windows HWND 映射、patch 应用检查和适配器单元测试通过；C++ 编译、Native 实机/MCP 以及 Unix 原生窗口映射待完成 |
+| TASK-022 至 023 | 浏览器层只读 C++ Bridge、可回放 patch、版本认证与 Native OS 输入适配器 | Windows HWND 映射、patch 应用检查、生产 C++ 编译单元语法与适配器单元测试通过；完整编译链接、Native 实机/MCP 以及 Unix 原生窗口映射待完成 |
 | TASK-024 | A1/A2 独立证据、研究工具与默认关闭的实验边界 | 静态证据和边界测试通过；完整同版本 A/B/C/D 物理轨迹继续验收 |
 | TASK-025 | 版本清单、真实 SBOM、ZIP、校验、签名门禁、安装/升级/回滚 | 完整 Windows 开发包已隔离安装验证；正式签名、公证和三平台生产基线待提供 |
 
 生产启动仅注册实际存在的适配器。Native 需要用户显式启用、自定义 Chromium 可执行文件及匹配的私有只读握手；版本或权限不匹配返回稳定错误。GUI 文本返回实际 `os-keyboard` 或 `os-unicode` 策略，IME 组合使用独立能力门禁。
 
-Windows 开发包为 `abr-0.1.0-win32-x64-development-157b7f2891e5.zip`，大小 267240365 bytes，SHA-256 为 `157b7f2891e51620473da792602d846bbe762761739993ed7d45c258d992d9f5`。包内 Native availability 为 false，DesktopAgent buildAttestation 为 null，保留实际二进制校验和和验收状态。
+最新 Windows 开发包为 `abr-0.1.0-win32-x64-development-eb5d8552ee32.zip`，大小 267313182 bytes，SHA-256 为 `eb5d8552ee32bc1959cc5ff4aafdcf1609562ab5b8bb1eb60bf02f6961bd5dcb`，代码 commit 为 `1124bc7465af518d1202df1b62b681410befbeb7`，打包阶段 gitDirty 为 false。实际隔离安装验证覆盖 2904 项 inventory、21 项 MCP 工具契约、版本、doctor、重复启动和 exact replay。SBOM 包含 36 项 runtime npm、127 项 all-target Cargo，以及按实际 binary 和完整许可证校验的 ffmpeg/Winldd 组件。包内 Native availability 为 false，DesktopAgent buildAttestation 为 null，保留实际二进制校验和和验收状态。
 
 人工基线审核、macOS/Linux 物理设备、正式发布证书和 Chromium 实际编译结果构成独立发布条件。自动测试产物采用 candidate provenance，发布工具依据实际条件生成结果。
