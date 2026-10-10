@@ -34,4 +34,6 @@ Windows 后端已实现窗口枚举、可信启动 PID 与 HWND 绑定、进程�
 
 最新实体回归于 2026-10-10 完成，1 项通过，耗时 6.31 秒。实际覆盖原子系统导航、只读 AX、单次按钮点击的 counter=1、auto 文本的 os-unicode 策略与完整空格保持、WGC PNG、原始进程句柄关闭和 profile 清理。此次运行使用最终关闭与输入保护实现。
 
-中文 Unicode 文本、文件选择器、截图敏感矩形像素检查、多显示器、125% DPI 专项、IME composition，以及用户抢占后的完整恢复分别保留独立验收状态。编译、单元测试与已完成的实体 GUI 主路径分别记录。
+中文 Unicode 文本和截图敏感矩形像素检查已完成最新实体回归。文件选择器、多显示器、125% DPI 专项、IME composition，以及用户抢占后的完整恢复分别保留独立验收状态。编译、单元测试与已完成的实体 GUI 主路径分别记录。
+
+2026-10-11 00:10:19 Asia/Shanghai 开始执行 `$env:ABR_GUI_E2E='1'; corepack pnpm exec vitest run tests/e2e/gui/windows.test.ts tests/e2e/gui/windows-mcp.test.ts`，2 项通过，总计 25.11 秒。直接 GUI 用例在真实浏览器通过原子导航和系统点击得到 counter=1，auto 文本策略返回 os-unicode，AX value 精确保持 `ABR native 中文`。受保护 textbox 的公开名称和值分别为 `Protected input` 与 `[REDACTED]`，完整 snapshot 排除 fixture 敏感值；由物理 bounds 和 windowOrigin 定位的 PNG 中心像素 RGB 为 `[0, 0, 0]`。WGC PNG 格式、原始进程关闭和 profile 清理通过。测试使用 SHA-256 为 `97d7a6828015b1ee7eec9913914a500326ece02e67c2bccb7eabaa73a6e0f7d5` 的实际 DesktopAgent。
