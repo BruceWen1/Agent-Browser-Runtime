@@ -35,3 +35,9 @@ Deadline 只停止本阶段创建的进程树，并等待关闭后释放 cwd 句
 定制版在验证原版完整输出、33.8176289 GiB 剩余空间预算及实际 83.7540588 GiB 可用空间后，按原 mailbox 进行 `git am --3way`，生成 applied-patches receipt。初次构建的 AppContainer ACL 步骤发生官方隔离 Python UTF-8 与本机 icacls 输出编码不一致；仅以进程局部 `PYTHONUTF8=0` 执行官方 `obj/build/config/win/acls.stamp` 目标，实际 ACL 操作 exit 0 后生成 stamp，后续恢复原环境和相同 GN。源码、补丁摘要及系统全局配置保持原有状态。
 
 随后定制版 8 jobs 阶段于 2026-10-11 07:59:55 Asia/Shanghai 返回 `0xc000012d` 与 LLVM out-of-memory。确认的所有 owned 构建进程已结束，原版、定制版部分输出、日志与缓存完整保留。后验系统提交上限为 42.25 GiB，分页文件为 2.5 GiB；13:03 的提交量为 34.45 GiB。后续恢复采用 2 jobs 和原有 86400 秒期限、固定 GN、完整源码及实时 20 GiB 磁盘保留规则，成功状态由新 compiled manifest 确认。
+
+原版同构建 Compatible smoke 已完成：独立回执为外部构建根目录下 `audit/compatible-original-1791695996787-a55db976-cc31-4e72-9c4d-50b2036dbc66.json`，state=passed，2026-10-11 13:19:56 Asia/Shanghai 完成，耗时 13.568 秒。实际生产 CompatibleEngine、Core Runtime/Policy 和官方 Playwright 1.64.0 启动 156.0.8078.12 单个 headless 浏览器根进程，7 项检查通过，涵盖授权 loopback 导航、AX 与计数初态、单次按钮计数 0 到 1、键盘输入的观察结果、PNG 格式与敏感内容隐私，以及全部 context/profile/worker/浏览器进程和临时资源清理。输入动作 provenance 为 playwright-cdp；6615 个受保护输入框内部像素均为 opaque-black，截图在内存验证。残留自有浏览器进程为 0。
+
+首个验证 helper 将 Chromium 子进程数量作为浏览器数量，导航前返回 ERR_ASSERTION；修正为单个浏览器根进程及其自有子进程后，完整 smoke 通过。首轮实际 EXE hash 与 manifest 匹配，后续验证相同 size/mtime；DLL identity 使用已验证 hash 及一致 metadata。原版 compiled manifest SHA-256 保持 `38530ae8897700077cd2d8d4cbe507ea4e8a32b055fc970bdcd945b9d1d6b7f0`，两次验证回执独立保存，人工 GUI parity、Native observer 和签名状态继续保持 pending。
+
+定制版低并发恢复于 2026-10-11 13:05 进入实际编译。21:22 只读进度为 done=27833、total=60887、skipped=36310、remaining=33054，唯一构建进程仍运行，GN、source、patch 与 2 jobs 参数保持。独立全局提交内存采样采用 5 秒间隔，采样峰值和最小余量分别记录；系统提交上限及分页文件实际分配量在运行中发生变化，构建工具保持原有系统设置。最新完成状态仍等待定制版 compiled manifest。
