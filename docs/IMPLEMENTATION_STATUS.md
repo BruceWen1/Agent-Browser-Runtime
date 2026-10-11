@@ -13,8 +13,8 @@
 | TASK-016 至 017 | GUI 目标、空间转换、坐标语义授权、审批目标绑定、独立引用缓存、输入独占和生产 MCP 注册 | 58 项非桌面检查通过；最新两项 Windows GUI 实测通过，覆盖中文、遮罩、生产 MCP 系统输入、协议与诊断隐私及 profile 清理；扩展场景继续验收 |
 | TASK-018 至 019 | 23 个自有 fixture、真实事件记录、严格比较、候选基线与人工审核 | 7 项 fixture/parity 测试通过；人工轨迹基线保持待审核 |
 | TASK-020 | Windows 独立审批进程、Pause/Resume/Stop 控制窗口与定向前台授权 | 协议/编译测试通过；实际按钮、热键和其他平台 UI 待人工验收 |
-| TASK-021 | 完整上游 SHA、DEPS、depot_tools、工具链、恢复/同步/补丁/构建管线 | Windows 工具链、156 个 Git scope、89 项 CIPD、同步和 hooks 通过；原版 GN 通过，本地编译进行中 |
-| TASK-022 至 023 | 浏览器层只读 C++ Bridge、可回放 patch、版本认证与 Native OS 输入适配器 | Windows HWND 映射、patch 应用检查、生产 C++ 编译单元语法与适配器单元测试通过；完整编译链接、Native 实机/MCP 以及 Unix 原生窗口映射待完成 |
+| TASK-021 | 完整上游 SHA、DEPS、depot_tools、工具链、恢复/同步/补丁/构建管线 | Windows 工具链、156 个 Git scope、89 项 CIPD、同步和 hooks 通过；原版全量编译完成，定制版因提交内存不足中止后采用较低并发恢复 |
+| TASK-022 至 023 | 浏览器层只读 C++ Bridge、可回放 patch、版本认证与 Native OS 输入适配器 | Windows HWND 映射、patch 应用及 GN、生产 C++ 编译单元语法与适配器单元测试通过；定制版完整编译链接、Native 实机/MCP 以及 Unix 原生窗口映射待完成 |
 | TASK-024 | A1/A2 独立证据、研究工具与默认关闭的实验边界 | 静态证据和边界测试通过；完整同版本 A/B/C/D 物理轨迹继续验收 |
 | TASK-025 | 版本清单、真实 SBOM、ZIP、校验、签名门禁、安装/升级/回滚 | 完整 Windows 开发包已隔离安装验证；正式签名、公证和三平台生产基线待提供 |
 
@@ -25,3 +25,5 @@
 人工基线审核、macOS/Linux 物理设备、正式发布证书和 Chromium 实际编译结果构成独立发布条件。自动测试产物采用 candidate provenance，发布工具依据实际条件生成结果。
 
 最新实体 GUI 验收于 2026-10-11 00:10:19 Asia/Shanghai 开始，命令为 `$env:ABR_GUI_E2E='1'; corepack pnpm exec vitest run tests/e2e/gui/windows.test.ts tests/e2e/gui/windows-mcp.test.ts`，2 项通过，总计 25.11 秒。DesktopAgent SHA-256 与上述开发包的 `97d7a6828015b1ee7eec9913914a500326ece02e67c2bccb7eabaa73a6e0f7d5` 一致。测试完成后的 Chromium 与控制进程关闭、ephemeral profile 清理均通过；人工轨迹基线和正式签名状态保持独立。
+
+原版 Chromium 于 2026-10-11 07:34 Asia/Shanghai 完成全量编译，版本为 156.0.8078.12，实际输出测量为 11869252851 bytes。定制版锁定补丁已应用且 GN 通过；本机 AppContainer ACL 工具的输出编码经官方独立目标修复。后续 8 jobs 构建返回 Windows `0xc000012d` 与 LLVM out-of-memory，完整输出和缓存保留。13:03 读取系统提交量为 34.45 GiB、提交上限为 42.25 GiB，恢复配置采用 2 jobs；Native 完整编译和实体握手状态继续依据实际完成凭据记录。

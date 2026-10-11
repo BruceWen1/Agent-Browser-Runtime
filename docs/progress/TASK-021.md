@@ -28,4 +28,10 @@ Deadline 只停止本阶段创建的进程树，并等待关闭后释放 cwd 句
 
 增量验证命令：`node --test chromium/build/budget.test.mjs chromium/build/pipeline.test.mjs experiments/research.test.mjs`：12 个测试通过；预算场景使用临时 owned 小目录及明确 test metadata。所属 ESLint、Prettier、`node --check` 和 `git diff --check` 通过。本轮未执行大源码计量、hooks、Chromium 编译或实体 GUI；后续真实阶段依据新命令生成各自凭据。
 
-最新真实阶段：官方同步及 hooks 均返回 exit 0，完成凭据绑定 156 个 selected Git scopes 和 89 项官方 CIPD marker；直接 Git 声明检查包含 143 个已初始化条目。hooks 完成时间为 2026-10-10 12:41:39 UTC。首次源码计量为 38485397219 bytes，约 35.84 GiB；上游 Node package link 和 Siso 日志别名采用 opaque 统计。原版 GN generation 已通过，8 个本地 jobs 的 Chromium 编译正在执行，尚未生成成功 build manifest。
+最新真实阶段：官方同步及 hooks 均返回 exit 0，完成凭据绑定 156 个 selected Git scopes 和 89 项官方 CIPD marker；直接 Git 声明检查包含 143 个已初始化条目。hooks 完成时间为 2026-10-10 12:41:39 UTC。首次源码计量为 38485397219 bytes，约 35.84 GiB；上游 Node package link 和 Siso 日志别名采用 opaque 统计。原版 GN generation 与全量编译均已通过。
+
+原版完成凭据为外部构建根目录下 `audit/build-original-1791675244297.json`，state=compiled，完成时间 2026-10-10 23:34:04 UTC，即 2026-10-11 07:34:04 Asia/Shanghai。PE 实际版本为 156.0.8078.12，source/DEPS/depot_tools/GN 与锁定值一致，完整输出测量为 11869252851 bytes。`out/ABROriginal/chrome.exe` 为 4200448 bytes，SHA-256 为 `285c11b6df4525a1d6d109063c36eb25bb859ebbc804cd3e212358af09ba6945`；`chrome.dll` 为 462582272 bytes，SHA-256 为 `a4170598db0ba8caf3d307a0b9aaf014b70caf6e9236965a63c0be003fe74003`。独立实际测量与 manifest 相同，对应 owned process tree 已确认关闭。同版本 Playwright、人工事件对照及正式发布仍为独立验收条件。
+
+定制版在验证原版完整输出、33.8176289 GiB 剩余空间预算及实际 83.7540588 GiB 可用空间后，按原 mailbox 进行 `git am --3way`，生成 applied-patches receipt。初次构建的 AppContainer ACL 步骤发生官方隔离 Python UTF-8 与本机 icacls 输出编码不一致；仅以进程局部 `PYTHONUTF8=0` 执行官方 `obj/build/config/win/acls.stamp` 目标，实际 ACL 操作 exit 0 后生成 stamp，后续恢复原环境和相同 GN。源码、补丁摘要及系统全局配置保持原有状态。
+
+随后定制版 8 jobs 阶段于 2026-10-11 07:59:55 Asia/Shanghai 返回 `0xc000012d` 与 LLVM out-of-memory。确认的所有 owned 构建进程已结束，原版、定制版部分输出、日志与缓存完整保留。后验系统提交上限为 42.25 GiB，分页文件为 2.5 GiB；13:03 的提交量为 34.45 GiB。后续恢复采用 2 jobs 和原有 86400 秒期限、固定 GN、完整源码及实时 20 GiB 磁盘保留规则，成功状态由新 compiled manifest 确认。

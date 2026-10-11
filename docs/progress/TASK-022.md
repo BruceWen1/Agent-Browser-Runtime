@@ -33,7 +33,7 @@ Windows 原生窗口映射使用当前浏览器 PID 的 HWND。viewport 采用�
 
 ## 待执行验证
 
-Windows 官方工具链预检、精确 DEPS 同步及原版 GN 生成已完成。补丁版 GN 生成、完整 Chromium C++ 编译、真实浏览器观察协议调用，以及原版和定制版事件回归保留独立验收状态。当前完整浏览器编译状态与真实 Native 隐私 fixture 验收状态均为待验证。
+Windows 官方工具链预检、精确 DEPS 同步及原版全量编译已完成。锁定 mailbox 已通过官方管线应用，源码 HEAD 为 `14d9e15b2cb35ea10f614bf280ddfa6af99d92f5`，patchset SHA-256 为 `eac7cd45e02bd49084ea89d72ff1435adb305b57f02b87d618bc4ae0942346fb`；补丁版 GN generation exit 0。定制版后续编译因 Windows 提交内存不足停止，已有缓存保留并采用较低并发恢复。定制版完整编译、真实浏览器观察协议调用、Native 隐私 fixture 以及原版和定制版事件回归保留独立验收状态。
 
 `observer.cc` 的独立语法检查复用原版 GN 的 `//chrome/browser:core` 编译参数、官方 clang-cl 和真实生成头，overlay 内容校验与仓库源码一致。首次检查等待 `content/public/common/extra_mojo_js_features.mojom.h`。随后在独立 audit overlay 中执行两个官方生成目标 `//content/public/common:interfaces__generator` 和 `//content/public/common:interfaces_shared__generator`，使用 7 个真实模块、IDL、模板、typemap 与既有生成参数，仅重定向生成目录，两项均 exit 0。最终 `/Zs` 检查 exit 0，19.134 秒，诊断为 0 bytes；5 个编译副本与仓库文件 SHA256 一致。生产源码与原版 out 保持原有内容。该结果验证生产 Observer 的头文件及 API 语法兼容，完整浏览器编译链接及物理验证保持独立状态。
 
