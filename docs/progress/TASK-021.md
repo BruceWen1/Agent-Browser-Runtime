@@ -40,4 +40,4 @@ Deadline 只停止本阶段创建的进程树，并等待关闭后释放 cwd 句
 
 首个验证 helper 将 Chromium 子进程数量作为浏览器数量，导航前返回 ERR_ASSERTION；修正为单个浏览器根进程及其自有子进程后，完整 smoke 通过。首轮实际 EXE hash 与 manifest 匹配，后续验证相同 size/mtime；DLL identity 使用已验证 hash 及一致 metadata。原版 compiled manifest SHA-256 保持 `38530ae8897700077cd2d8d4cbe507ea4e8a32b055fc970bdcd945b9d1d6b7f0`，两次验证回执独立保存，人工 GUI parity、Native observer 和签名状态继续保持 pending。
 
-定制版低并发恢复于 2026-10-11 13:05 进入实际编译。21:22 只读进度为 done=27833、total=60887、skipped=36310、remaining=33054，唯一构建进程仍运行，GN、source、patch 与 2 jobs 参数保持。独立全局提交内存采样采用 5 秒间隔，采样峰值和最小余量分别记录；系统提交上限及分页文件实际分配量在运行中发生变化，构建工具保持原有系统设置。最新完成状态仍等待定制版 compiled manifest。
+定制版低并发恢复于 2026-10-11 13:05 进入实际编译。2026-10-11 12:22:33 UTC，即 20:22:33 Asia/Shanghai，只读进度为 done=27833、total=60887、skipped=36310、remaining=33054。2026-10-11 16:18:45 UTC，即 2026-10-12 00:18:45 Asia/Shanghai，进度为 done=35689、total=60227、skipped=36970、remaining=24538；唯一构建进程仍运行，GN、source、patch 与 2 jobs 参数保持。独立全局提交内存采样采用 5 秒间隔，采样峰值和最小余量分别记录；系统提交上限及分页文件实际分配量在运行中发生变化，构建工具保持原有系统设置。最新完成状态仍等待定制版 compiled manifest。

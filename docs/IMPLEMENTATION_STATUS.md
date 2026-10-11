@@ -28,4 +28,4 @@
 
 原版 Chromium 于 2026-10-11 07:34 Asia/Shanghai 完成全量编译，版本为 156.0.8078.12，实际输出测量为 11869252851 bytes。定制版锁定补丁已应用且 GN 通过；本机 AppContainer ACL 工具的输出编码经官方独立目标修复。后续 8 jobs 构建返回 Windows `0xc000012d` 与 LLVM out-of-memory，完整输出和缓存保留。13:03 读取系统提交量为 34.45 GiB、提交上限为 42.25 GiB，恢复配置采用 2 jobs；Native 完整编译和实体握手状态继续依据实际完成凭据记录。
 
-同构建原版验证于 2026-10-11 13:19 Asia/Shanghai 完成，生产 CompatibleEngine、Core Runtime/Policy 和官方 Playwright 1.64.0 使用实际 156.0.8078.12 浏览器，以单个 headless 根进程完成 7 项检查，耗时 13.568 秒。loopback 导航、AX、按钮计数、键盘输入、PNG、受保护 AX 和 6615 个敏感内部像素的 opaque-black 遮罩均通过，context/profile/worker/浏览器进程与临时资源完整清理；编译清单保持原样，独立回执记录通过状态。定制版于 21:22 实测 remaining=33054，唯一 2 jobs 构建仍运行，尚未生成 compiled manifest。
+同构建原版验证于 2026-10-11 13:19 Asia/Shanghai 完成，生产 CompatibleEngine、Core Runtime/Policy 和官方 Playwright 1.64.0 使用实际 156.0.8078.12 浏览器，以单个 headless 根进程完成 7 项检查，耗时 13.568 秒。loopback 导航、AX、按钮计数、键盘输入、PNG、受保护 AX 和 6615 个敏感内部像素的 opaque-black 遮罩均通过，context/profile/worker/浏览器进程与临时资源完整清理；编译清单保持原样，独立回执记录通过状态。定制版于 2026-10-11 20:22 实测 remaining=33054，2026-10-12 00:18 实测 remaining=24538；唯一 2 jobs 构建仍运行，尚未生成 compiled manifest。
